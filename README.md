@@ -8,7 +8,7 @@ finished or fully capable of an automatic analysis, reaction rates etc.
 What reaXtract does:
 - extracting reactions from reaxff bond files by identifying changed connectivity
 - print reacting atom IDs to the console
-- For each found Reaction (e.g. R0) two pictures are created in subfolder 'reaxff.bond.file'.dir
+- For each reaction found two pictures (before/after) are created in subfolder 'reaxff.bond.file'.dir
   
 What reaXtract does not (maybe yet):
 - take into account positions
