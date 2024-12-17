@@ -10,7 +10,7 @@ What reaXtract does:
 - print reacting atom IDs to the console
 - For each reaction found two pictures (before/after) are created in subfolder 'reaxff.bond.file'.dir
   
-What reaXtract does not (maybe yet):
+What reaXtract does not (yet?):
 - take into account positions
 - take into account unbonded interactions (catalysts, etc.)
 - generate SMILES, SMART etc. output
