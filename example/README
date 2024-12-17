@@ -1,0 +1,22 @@
+This is a small example to demonstrate reaXtract. The connectivity file was
+created by simulating 5 short PEEK molecules with reaxFF for a temperature of
+2000K with LAMMPS. Screenshot and data file can be found in the examples folder.
+
+The input file "bonds.reaxff.dump" for reaXtract was created with
+fix reaxff/bonds in LAMMPS. After the header the file contains a list with
+- id = atom id
+- type = atom type
+- nb = number of bonds
+- id_1 = atom id of first bond
+- id_nb = atom id of Nth bond
+- mol = molecule id
+- bo_1 = bond order of first bond
+- bo_nb = bond order of Nth bond
+- abo = atom bond order (sum of all bonds)
+- nlp = number of lone pairs
+- q = atomic charge
+
+To run, simply call reaXtract with the file as single argument:
+"reaXtract.py bonds.reaxff.dump"
+or
+"python3 reaXtract.py bonds.reaxff.dump"
