@@ -17,7 +17,7 @@ What reaXtract does not (maybe yet):
 
 ## Citing
 
-no publication yet. For the time being, please cite Wolfgnag Verestek with the github repo
+no publication yet. For the time being, please cite Wolfgang Verestek with the github repo
 
 ## Installation
 
