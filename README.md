@@ -44,5 +44,4 @@ For colors see https://matplotlib.org/3.1.1/gallery/color/named_colors.html
 
 ## Contributing
 
-Pull requests are welcome. For major changes, please open an issue first
-to discuss what you would like to change.
+Contributions welcome
