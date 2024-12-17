@@ -15,15 +15,6 @@ What reaXtract does not (maybe yet):
 - take into account unbonded interactions (catalysts, etc.)
 - generate SMILES, SMART etc. output
 
-stepwidth for frames can be adjusted at the beginning of the script:
-- startstep: index of step to start with
-- checkstep: compare to index+checkstep
-- framestep: move index framestep every time.
-e.g. startstep 0, checkstep 1, framestep 5: compare frame 0 with 1, 5 with 6, 10 with 11 etc.
-
-colorcoding for the plots can be spcefied for each atom type in the dictionary type2color.
-For colors see https://matplotlib.org/3.1.1/gallery/color/named_colors.html
-
 ## Citing
 
 no publication yet. For the time being, please cite Wolfgang Verestek with the github repo
@@ -41,6 +32,15 @@ Python modules:
 ## Usage
 
 python3 reaXtract.py 'reaxff.bonds.file'
+
+stepwidth for frames can be adjusted at the beginning of the script:
+- startstep: index of step to start with
+- checkstep: compare to index+checkstep
+- framestep: move index framestep every time.
+e.g. startstep 0, checkstep 1, framestep 5: compare frame 0 with 1, 5 with 6, 10 with 11 etc.
+
+colorcoding for the plots can be spcefied for each atom type in the dictionary type2color.
+For colors see https://matplotlib.org/3.1.1/gallery/color/named_colors.html
 
 ## Contributing
 
