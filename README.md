@@ -31,7 +31,7 @@ Python modules:
 
 ## Usage
 
-python3 reaXtract.py 'reaxff.bonds.file'
+```python3 reaXtract.py 'reaxff.bonds.file'```
 
 stepwidth for frames can be adjusted at the beginning of the script:
 - startstep: index of step to start with
