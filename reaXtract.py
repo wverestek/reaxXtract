@@ -48,7 +48,7 @@ class ReaXtract:
         intype : str
             file type of the file containing bond information. Default "reaxff"
         basename : str
-            base name for output. If not set athe input file name is used as base name.
+            base name for output. If not set the input file name is used as base name.
         startstep : int
             MD time step to start evaluating the bond information. Default: 0
         stopstep : int
@@ -408,12 +408,12 @@ class ReaXtract:
 
     # find and count rings #
     def count_rings(self, ring_limits:tuple=None):
-        print("Searching for ring structures...")
         if self.ring_limits is None:
             self.ring_limits = (3, 10)
         if ring_limits != None:
             self.ring_limits = ring_limits
 
+        print("Searching for ring structures with sizes:",self.ring_limits)
         start = self.startidx
         stop = self.stopidx
         cf = self.checkframe
@@ -450,12 +450,12 @@ class ReaXtract:
 # End of class
 def usage():
     """Usage:
-            python3 ..\reaXtract.py -i bonds.reaxff.dump -r -a 1:6,2:1,3:1,4:8,5:8,6:8,7:8,8:8
+            python3 ..\reaXtract.py -i bonds.reaxff.dump -r 3:10 -a 1:6,2:1,3:1,4:8,5:8,6:8,7:8,8:8
     """
 
 if __name__ == "__main__":
 
-    short_opts = "hi:b:a:r"
+    short_opts = "hi:b:a:r::"
     long_opts = ("--help",
                  "--in=","--infile=","--input=",
                  "--basename=","--base="
@@ -498,11 +498,12 @@ if __name__ == "__main__":
             else: assert False,["unrecognized option: evaluate_by must be 'type' or 'element'",o,a]
         elif o in ("-r","--rings=","--countrings="):
             count_rings = True
-        elif o in ("--rs=","--ring_size=","--ring_sizes="):
-            tmp = [int(i) for i in a.strip().split(":")]
-            if len(tmp)==1: ring_length = [3,tmp]
-            elif len(tmp)==2: ring_length = sorted([tmp[0],tmp[1]])
-            else: assert False, ["can't evaluate ring sizes option",o,a]
+            if len(a)>0:
+                tmp = [int(i) for i in a.strip().split(":")]
+                if len(tmp)==1: ring_length = (3,tmp[0])
+                elif len(tmp)==2: ring_length = tuple(sorted([tmp[0],tmp[1]]))
+            else:
+                ring_length=ring_length
         else:
             assert False, ["unhandled option:",o,a]
 
@@ -515,11 +516,12 @@ if __name__ == "__main__":
     #                           ring_counter=count_rings, ring_limits=ring_length)
     rxt: ReaXtract = ReaXtract(basename=basename,
                                atom_type_map=atom_type_map)
-    print("User script infile:",infile)
     rxt.read(infile=infile)
     rxt.find_rxn()
     rxt.plot_rxn()
-    rxt.count_rings(ring_limits=(3,15))
+    if count_rings:
+        print("ring_length",ring_length)
+        rxt.count_rings(ring_limits=ring_length)
     print("finished")
 
 
