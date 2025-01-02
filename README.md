@@ -31,7 +31,7 @@ Python modules:
 
 ## Usage
 
-```python3 ..\reaXtract.py -i bonds.reaxff.dump -r -a 1:6,2:1,3:1,4:8,5:8,6:8,7:8,8:8```
+```python3 ..\reaXtract.py -i bonds.reaxff.dump -r 3:10 -a 1:6,2:1,3:1,4:8,5:8,6:8,7:8,8:8```
 
 stepwidth for frames can be adjusted at the beginning of the script:
 - startstep: index of step to start with
