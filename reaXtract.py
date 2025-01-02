@@ -231,7 +231,7 @@ class ReaXtract:
     def find_rxn(self):
         print("Searching reactions...")
         f_rxn:TextIO = open(self.basename + "_rxnIDs.dat", "w")
-        mystr = "# Timestep \t RxnID \t RxnCount \t FromIDs ToIDs \t FromType ToType \t FromElem ToElem \t Rxn_hashes"
+        mystr = "# Timestep \t RxnID \t RxnCount \t FromIDs:ToIDs \t FromType:ToType \t FromElem:ToElem \t Rxn_hashes"
         print(mystr)
         f_rxn.write(mystr+"\n")
 
@@ -326,7 +326,7 @@ class ReaXtract:
                         self.rxn_count[rxn_id] += 1
                     mystr = ";\t".join(tmp for tmp in
                             [str(self.ts[idx]),str(rxn_id),str(self.rxn_count[rxn_id]),
-                             str(connect1)+":"+str(connect2),
+                             str(rxn_before)+":"+str(rxn_after),
                              str(type_before)+":"+str(type_after),
                              str(self.rxn_elements_before[idx][i])+":"+str(self.rxn_elements_after[idx][i]),
                              rxn_hash])
@@ -455,7 +455,7 @@ def usage():
 
 if __name__ == "__main__":
 
-    short_opts = "hi:b:a:r::"
+    short_opts = "hi:b:a:r:"
     long_opts = ("--help",
                  "--in=","--infile=","--input=",
                  "--basename=","--base="
