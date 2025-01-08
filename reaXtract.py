@@ -272,12 +272,10 @@ class ReaXtract:
                 node2type = nx.get_node_attributes(self.nxg[idx], name="type")
 
                 # include reactions rxn_bond_cutoff away?
-                print("0:",reacting_atoms)
                 if self.rxn_bond_cutoff > 0:
                     reacting_atoms = k_nearest_neighs(self.nxg[idx-cf],reacting_atoms,self.rxn_bond_cutoff).union(
                                      k_nearest_neighs(self.nxg[idx]   ,reacting_atoms,self.rxn_bond_cutoff)       )  # combine sets
-                print("1:",reacting_atoms)
-
+                
                 # group by connectivity for all reactions #
                 # edges before and after reaction
                 Gcombine = self.nxg[idx].subgraph(reacting_atoms).copy()                                   # nx.Graph
