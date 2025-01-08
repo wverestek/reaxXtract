@@ -127,6 +127,8 @@ class ReaXtract:
         #print("read:",infile,self.infile)
         if len(infile)>0:
             self.infile = infile
+        if len(self.basename) == 0 and len(self.infile)>0:
+            self.basename = self.infile
         if intype.lower() == "reaxff":
             self.read_reax()
         else:
@@ -139,6 +141,9 @@ class ReaXtract:
         #print("read_reax:", infile,self.infile)
         if len(infile) > 0:
             self.infile = infile
+        if len(self.basename) == 0 and len(self.infile)>0:
+            self.basename = self.infile
+            
 
         print("Reading reax file:", self.infile)
         f = open(self.infile, "r")
@@ -252,8 +257,11 @@ class ReaXtract:
         for idx in range(start + cf, stop+1, fs):
             # comparing graphs,
             # edges that are not in both graphs, list of tuples
-            reacting_edges = sum(nx.difference(self.nxg[idx - cf], self.nxg[idx]).edges(),
-                                 nx.difference(self.nxg[idx], self.nxg[idx - cf]).edges())                   # nx.EdgeView: list(tuple(int,int),)
+            #print(idx-cf, idx)
+            #print(nx.difference(self.nxg[idx - cf], self.nxg[idx]).edges())
+            #print(nx.difference(self.nxg[idx], self.nxg[idx - cf]).edges())
+            reacting_edges = set(nx.difference(rxt.nxg[idx -cf], rxt.nxg[idx]).edges()).union(
+                             set(nx.difference(rxt.nxg[idx], rxt.nxg[idx - cf]).edges())       )
             # atom IDs that are involved with changed bond connectivity
             reacting_atoms = set(i for j in reacting_edges for i in j)                                       # set(int)
 
@@ -264,9 +272,11 @@ class ReaXtract:
                 node2type = nx.get_node_attributes(self.nxg[idx], name="type")
 
                 # include reactions rxn_bond_cutoff away?
+                print("0:",reacting_atoms)
                 if self.rxn_bond_cutoff > 0:
                     reacting_atoms = k_nearest_neighs(self.nxg[idx-cf],reacting_atoms,self.rxn_bond_cutoff).union(
-                                     k_nearest_neighs(self.nxg[idx]   ,reacting_atoms,self.rxn_bond_cutoff)      )  # combine sets
+                                     k_nearest_neighs(self.nxg[idx]   ,reacting_atoms,self.rxn_bond_cutoff)       )  # combine sets
+                print("1:",reacting_atoms)
 
                 # group by connectivity for all reactions #
                 # edges before and after reaction
