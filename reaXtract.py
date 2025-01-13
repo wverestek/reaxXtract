@@ -31,7 +31,7 @@ def k_nearest_neighs(G:nx.Graph, start:set, k:int) -> set:
 
 
 
-class ReaXtract:
+class ReaxXtract:
     ##############
     # initialize #
     ##############
@@ -67,7 +67,7 @@ class ReaXtract:
         """
         
         print("Initializing...")
-        self.name:str = "reaXtract"
+        self.name:str = "ReaxXtract"
         self.infile:str = infile
         self.intype:str = intype.lower()
         if len(basename) > 0:
@@ -458,7 +458,7 @@ class ReaXtract:
 # End of class
 def usage():
     """Usage:
-            python3 ..\reaXtract.py -i bonds.reaxff.dump -r 3:10 -a 1:6,2:1,3:1,4:8,5:8,6:8,7:8,8:8
+            python3 ..\ReaxXtract.py -i bonds.reaxff.dump -r 3:10 -a 1:6,2:1,3:1,4:8,5:8,6:8,7:8,8:8
     """
 
 if __name__ == "__main__":
@@ -518,11 +518,11 @@ if __name__ == "__main__":
     # check arguments
     assert os.path.isfile(infile),["input file not found:",infile]
 
-    #rxt: ReaXtract = ReaXtract(infile=infile,
+    #rxt: ReaxXtract = ReaxXtract(infile=infile,
     #                           basename=basename,
     #                           atom_type_map="1:6,2:1,3:1,4:8,5:8,6:8,7:8,8:8",
     #                           ring_counter=count_rings, ring_limits=ring_length)
-    rxt: ReaXtract = ReaXtract(basename=basename,
+    rxt: ReaxXtract = ReaxXtract(basename=basename,
                                atom_type_map=atom_type_map)
     rxt.read(infile=infile)
     rxt.find_rxn()
