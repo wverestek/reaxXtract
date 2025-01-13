@@ -1,16 +1,16 @@
-# reaXtract
-reaXtract is a python tool to extract reactions from molecular dynamics
+# reaxXtract
+reaxXtract is a python tool to extract reactions from molecular dynamics
 simulations with the reax force field.
 
 At the moment this is just some rough code I put together and far from being 
 finished or fully capable of an automatic analysis, reaction rates etc.
 
-What reaXtract does:
+What reaxXtract does:
 - extracting reactions from reaxff bond files by identifying changed connectivity
 - print reacting atom IDs to the console
 - For each reaction found two pictures (before/after) are created in subfolder 'reaxff.bond.file'.dir
   
-What reaXtract does not (yet?):
+What reaxXtract does not (yet?):
 - take into account positions
 - take into account unbonded interactions (catalysts, etc.)
 - generate SMILES, SMART etc. output
@@ -31,7 +31,7 @@ Python modules:
 
 ## Usage
 
-```python3 ..\reaXtract.py -i bonds.reaxff.dump -r 3:10 -a 1:6,2:1,3:1,4:8,5:8,6:8,7:8,8:8```
+```python3 ..\reaxXtract.py -i bonds.reaxff.dump -r 3:10 -a 1:6,2:1,3:1,4:8,5:8,6:8,7:8,8:8```
 
 stepwidth for frames can be adjusted at the beginning of the script:
 - startstep: index of step to start with
