@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import networkx as nx
 from numpy.f2py.rules import typedef_need_dict
 
+#import pdb
+#pdb.set_trace()
 
 ##########################
 # convert string to dict # e.g. "1:1,2:6,3:8" -> {1:1,2:6,3:8}
@@ -26,7 +28,7 @@ def convert_str2dict(atom_type_map: str) -> dict:
 def k_nearest_neighs(G:nx.Graph, start:set, k:int) -> set:
     neighs = start
     for l in range(k):
-        neighs = set((nbr for n in neighs for nbr in G[n]))
+        neighs.update( set((nbr for n in neighs for nbr in G[n])) )
     return neighs
 
 
@@ -260,8 +262,8 @@ class ReaxXtract:
             #print(idx-cf, idx)
             #print(nx.difference(self.nxg[idx - cf], self.nxg[idx]).edges())
             #print(nx.difference(self.nxg[idx], self.nxg[idx - cf]).edges())
-            reacting_edges = set(nx.difference(rxt.nxg[idx -cf], rxt.nxg[idx]).edges()).union(
-                             set(nx.difference(rxt.nxg[idx], rxt.nxg[idx - cf]).edges())       )
+            reacting_edges = set(nx.difference(self.nxg[idx -cf], self.nxg[idx]).edges()).union(
+                             set(nx.difference(self.nxg[idx], self.nxg[idx - cf]).edges())       )
             # atom IDs that are involved with changed bond connectivity
             reacting_atoms = set(i for j in reacting_edges for i in j)                                       # set(int)
 
@@ -364,33 +366,54 @@ class ReaxXtract:
             # for each reaction in timestep
             for i, rxn_before in enumerate(self.rxn_sets_before[idx]):
                 rxn_atoms = set(i for j in rxn_before for i in j)
-                edge_length = None #1.0/(len(rxn_atoms)**0.5)
+                #print("rxn_atoms",rxn_atoms)
+                #edge_length = None #1.0/(len(rxn_atoms)**0.5)
                 # get reacting edges
                 G1 = self.nxg[idx-cf].subgraph(rxn_atoms)
                 G2 = self.nxg[idx].subgraph(rxn_atoms)
-                active_edges1 = nx.difference(G2, G1).edges()
-                active_edges2 = nx.difference(G1, G2).edges()
+                #print("G1.nodes():",G1.nodes)
+                #print("G2.nodes():",G2.nodes)
+                active_edges1 = nx.difference(G1, G2).edges()
+                active_edges2 = nx.difference(G2, G1).edges()
                 # reacting atoms and environment atoms
-                print_atoms = k_nearest_neighs(self.nxg[idx], rxn_atoms, self.plot_bonds) # list of int
-                Gprint = self.nxg[idx].subgraph(print_atoms).copy()
-                # positions with spring model
-                Gprint.add_edges_from(active_edges1)
+                #print_atoms = k_nearest_neighs(self.nxg[idx], rxn_atoms, self.plot_bonds) # list of int
+                #Gprint = self.nxg[idx].subgraph(print_atoms).copy()
+                #Gprint.add_edges_from(active_edges2)
+                print("rxn_atoms",rxn_atoms)
+                print_atoms = k_nearest_neighs(self.nxg[idx-cf], rxn_atoms, self.plot_bonds) # set
+                print(self.plot_bonds,"print_atoms",print_atoms)
+                Gprint = self.nxg[idx-cf].subgraph(print_atoms).copy()
+                Gprint.add_edges_from(active_edges2)
+                
                 #pos = nx.forceatlas2_layout(Gprint,seed=random.randrange(0,5000))
                 pos = nx.kamada_kawai_layout(Gprint)
                 pos = nx.spring_layout(Gprint, iterations=200, pos=pos)
-
                 del Gprint
 
+                #print("G1.nodes():",G1.nodes)
+                print(pos)
+                print("active_edges1/2:",active_edges1,active_edges2)
+                
                 # before reaction
                 plt.clf()
-                Gprint = self.nxg[idx-cf].subgraph(print_atoms)
+                #Gprint = self.nxg[idx-cf].subgraph(print_atoms)
+                #color = [self.elem2rgb.get(v, self.default_color) for v in
+                #         nx.get_node_attributes(Gprint, name="element").values()]
+                G1 = self.nxg[idx-cf].subgraph(print_atoms)
                 color = [self.elem2rgb.get(v, self.default_color) for v in
-                         nx.get_node_attributes(Gprint, name="element").values()]
-                node_labels = {k:  str(node2elem[k]) + ":" + str(node2type[k]) + "\n" + str(k) for k in Gprint}
-                bo = [tmp for tmp in list(nx.get_edge_attributes(Gprint, "bo").values())]
-                pos = nx.spring_layout(Gprint, iterations=500, pos=pos)
-                nx.draw_networkx_edges(Gprint, edgelist=active_edges2, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos)
-                nx.draw(Gprint, pos=pos, node_color=color, with_labels=True, labels=node_labels, font_size=6,
+                         nx.get_node_attributes(G1, name="element").values()]
+                #node_labels = {k:  str(node2elem[k]) + ":" + str(node2type[k]) + "\n" + str(k) for k in Gprint}
+                #bo = [tmp for tmp in list(nx.get_edge_attributes(Gprint, "bo").values())]
+                #pos = nx.spring_layout(Gprint, iterations=500, pos=pos)
+                node_labels = {k:  str(node2elem[k]) + ":" + str(node2type[k]) + "\n" + str(k) for k in G1}
+                bo = [tmp for tmp in list(nx.get_edge_attributes(G1, "bo").values())]
+                pos = nx.spring_layout(G1, iterations=500, pos=pos)
+
+                #nx.draw_networkx_edges(Gprint, edgelist=active_edges1, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos)
+                #nx.draw(Gprint, pos=pos, node_color=color, with_labels=True, labels=node_labels, font_size=6,
+                #        node_size=300, edge_color="black", width=bo)
+                nx.draw_networkx_edges(G1, edgelist=active_edges1, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos)
+                nx.draw(G1, pos=pos, node_color=color, with_labels=True, labels=node_labels, font_size=6,
                         node_size=300, edge_color="black", width=bo)
                 plt.tight_layout()
                 f_out = os.path.join(outfolder, self.basename + "_" + str(self.ts[idx]) + "_Rxn" + str(i) + "_0.png")
@@ -404,7 +427,7 @@ class ReaxXtract:
                 node_labels = {k:  str(node2elem[k]) + ":" + str(node2type[k]) + "\n" + str(k) for k in Gprint}
                 bo = [tmp for tmp in list(nx.get_edge_attributes(Gprint, "bo").values())]
                 pos = nx.spring_layout(Gprint, iterations=500, pos=pos)
-                nx.draw_networkx_edges(Gprint, edgelist=active_edges1, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos)
+                nx.draw_networkx_edges(Gprint, edgelist=active_edges2, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos)
                 nx.draw(Gprint, pos=pos, node_color=color, with_labels=True, labels=node_labels, font_size=6,
                         node_size=300, edge_color="black", width=bo)
                 plt.tight_layout()
@@ -463,12 +486,15 @@ def usage():
 
 if __name__ == "__main__":
 
-    short_opts = "hi:b:a:r:"
+    short_opts = "hi:b:a:r:c:f:"
     long_opts = ("--help",
                  "--in=","--infile=","--input=",
                  "--basename=","--base="
                  "--atom_map=","--atom_type_map=","--atm=",
-                 "--rs=","--ring_size=","--ring_sizes=")
+                 "--rs=","--ring_size=","--ring_sizes=",
+                 "--cf=","--check=","--checkframe=",
+                 "--fs=","--frame=","--framestep="
+    )
 
     try:
         optlist, args = getopt.getopt(sys.argv[1:],shortopts=short_opts,longopts=long_opts)
@@ -484,6 +510,8 @@ if __name__ == "__main__":
     eval_by = "type"
     count_rings = False
     ring_length = (3,10)
+    checkframe: int = 1
+    framestep: int = 1
 
     # input options
     print(optlist)
@@ -512,6 +540,11 @@ if __name__ == "__main__":
                 elif len(tmp)==2: ring_length = tuple(sorted([tmp[0],tmp[1]]))
             else:
                 ring_length=ring_length
+        elif o in ("-c","--cf=","--check=","--checkframe="):
+            checkframe = int(a)
+        elif o in ("-f","--fs=","--frame=","--framestep="):
+            framestep = int(a)
+    
         else:
             assert False, ["unhandled option:",o,a]
 
@@ -523,7 +556,9 @@ if __name__ == "__main__":
     #                           atom_type_map="1:6,2:1,3:1,4:8,5:8,6:8,7:8,8:8",
     #                           ring_counter=count_rings, ring_limits=ring_length)
     rxt: ReaxXtract = ReaxXtract(basename=basename,
-                               atom_type_map=atom_type_map)
+                                 atom_type_map=atom_type_map,
+                                 checkframe=checkframe,framestep=framestep,
+                                 rxn_bond_cutoff=1,plot_bonds=5)
     rxt.read(infile=infile)
     rxt.find_rxn()
     rxt.plot_rxn()
