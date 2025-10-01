@@ -1,6 +1,6 @@
 # reaxXtract
 reaxXtract is a python tool to extract reactions from molecular dynamics
-simulations with the reax force field.
+simulations with the reax force field (reaxFF).
 
 At the moment this is just some rough code I put together and far from being 
 finished or fully capable of an automatic analysis, reaction rates etc.
