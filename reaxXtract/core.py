@@ -1,7 +1,7 @@
 import os.path, sys, re
 import random
 
-from typing import Counter, TextIO
+from typing import TextIO
 
 import networkx as nx
 import numpy as np
@@ -247,7 +247,7 @@ class ReaxXtract:
             Gbefore = self.frames["graph"].iloc[idx-cf]
             Gafter = self.frames["graph"].iloc[idx]
 
-            log.info(f"evaluating frame: {idx} timestep: {self.frames["timestep"].iloc[idx]}")
+            log.info(f"evaluating frame: {idx} timestep: {self.frames['timestep'].iloc[idx]}")
             # find reacting atoms
             [edges_sets_before,edges_sets_after, reaction_sets] = self.find_reacting_atoms_for_two_frames(Gbefore, Gafter)   # list(set(int,),set(int,))
             log.debug(f"reaction_sets: {reaction_sets} with edges_before: {edges_sets_before} and edges_after: {edges_sets_after}")
@@ -386,9 +386,8 @@ class ReaxXtract:
 
     # remove reactions that reverse in stabilize frames #
     def remove_reversing_reactions(self,nframes:int=None,df:pd.core.frame.DataFrame=None):
-        log.info("Removing reactions that reverse in stabilize frames...")
         self.stabiframe = nframes or self.stabiframe
-
+        
         # use on self.rxns or another Pandas DataFrame if provided as argument
         df = df or self.rxns
 
@@ -412,16 +411,14 @@ class ReaxXtract:
                 rmv_idx.append(rev_idx)
         
         if len(rmv_idx) > 0:
-            log.info(f"Reaction found that reverses within {self.stabiframe} frames, removing reactions")
-            log.info(f"{df.iloc[rmv_idx]}")
-            df_rmv = df.iloc[rmv_idx].copy()
-            df.drop(rmv_idx, inplace=True)
+            log.info(f"Reaction(s) found that reverses within {self.stabiframe} frames, removing reactions")
+            #log.info(f"{df.iloc[rmv_idx]}")
+            #df_rmv = df.iloc[rmv_idx].copy()
+            df_rmv = df.drop(rmv_idx, inplace=True)
             self.renumber_and_count_rxns()
         else:
             df_rmv = None
         
-        log.info(f"Number of reactions removed: {len(rmv_idx)}")
-        log.info(f"expected return argument: df with reactions that reverse within {self.stabiframe} frames, or None if no such reactions found")
         return df_rmv
 
     # plot reactions #
