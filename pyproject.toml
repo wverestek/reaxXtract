@@ -1,0 +1,15 @@
+[project]
+name = "reaxXtract"
+version = "0.1.0"
+description = "Analysis and visualization tool for ReaxFF bond topology files"
+authors = [{name="Wolfgang Verestek"}]
+license = {text="MIT"}
+requires-python = ">=3.9"
+dependencies = [
+    "networkx>=3.0",
+    "matplotlib>=3.5",
+    "pandas>=2.0",
+]
+
+[project.scripts]
+reaxXtract = "reaxXtract.cli:main"
