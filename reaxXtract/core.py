@@ -4,11 +4,9 @@ import random
 from typing import Counter, TextIO
 
 import networkx as nx
-#from networkx.readwrite.nx_ import edges_from_line
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from numpy.f2py.rules import typedef_need_dict
 
 
 from .utils import k_nearest_neighs, convert_str2dict
