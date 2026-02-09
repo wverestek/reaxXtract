@@ -1,41 +1,114 @@
 # functions for handling data import and export
-import os.path, gzip
+import os.path
+import gzip
+import glob
+import re
+from typing import List, Tuple, Union
+
 import networkx as nx
 from .logger import log
-#from networkx.classes import Graph
-#from .utils import ON2ELEM, ON2HEX, ELEM2HEX, DEFAULT_COLOR
+# from networkx.classes import Graph
+# from .utils import ON2ELEM, ON2HEX, ELEM2HEX, DEFAULT_COLOR
+
+
+def _natural_key(path: str):
+    """
+    Natural sort key for file paths similar to `ls -v`.
+    Splits the basename into alternating non-digit and digit parts and
+    returns a tuple where digit parts are ints (so 8 < 10).
+    Works independent of differing name prefixes.
+    """
+    name = os.path.basename(path)
+    parts = re.findall(r'\d+|\D+', name)
+    key = []
+    for p in parts:
+        if p.isdigit():
+            # preserve numeric ordering, handle big integers
+            key.append(int(p))
+        else:
+            # case-insensitive text ordering
+            key.append(p.lower())
+    return tuple(key)
+
+
+def _expand_infiles(infile: Union[str, List[str]]) -> List[str]:
+    """
+    Accepts a filename, a list of filenames or glob pattern(s),
+    returns a version-aware sorted, validated list of existing file paths.
+    Raises FileNotFoundError if no files found.
+    """
+    if infile is None or infile == "":
+        return []
+
+    items: List[str] = []
+    if isinstance(infile, (list, tuple)):
+        raw_items = list(infile)
+    else:
+        raw_items = [infile]
+
+    for it in raw_items:
+        if any(ch in it for ch in ("*", "?", "[")):
+            matches = glob.glob(it)
+            if matches:
+                items.extend(matches)
+        else:
+            items.append(it)
+
+    # validate existence and remove duplicates (preserve first occurrence)
+    seen = set()
+    unique_files: List[str] = []
+    for p in items:
+        if p in seen:
+            continue
+        if not os.path.exists(p):
+            raise FileNotFoundError(f"Input file not found: {p}")
+        seen.add(p)
+        unique_files.append(p)
+
+    if not unique_files:
+        raise FileNotFoundError(f"No input files found for pattern(s): {infile}")
+
+    # perform version-aware (natural) sort across all resolved files
+    unique_files.sort(key=_natural_key)
+    return unique_files
 
 ##########################
 # read bond file wrapper #
 ##########################
-def read_bonds(infile:str="", informat:str="reaxff") -> list[ list[int,], list[nx.Graph,] ]:
-    if not os.path.isfile(infile):
-        raise FileNotFoundError(f"Input file not found: {infile}")
-    
+def read_bonds(infile: Union[str, List[str]] = "", informat: str = "reaxff") -> list[list[int,], list[nx.Graph,]]:
+    """
+    Read one or multiple bond files.
+    - infile: single filename, list of filenames, or glob pattern(s)
+    - returns combined (ts, nxg) from all matched files (in version-aware sorted order)
+    """
+    files = _expand_infiles(infile)
     if informat.lower() == "reaxff":
-        [ts, nxg] = read_reax(infile)
+        all_ts: List[int] = []
+        all_nxg: List[nx.Graph] = []
+        for f in files:
+            ts, nxg = read_reax(f)
+            all_ts.extend(ts)
+            all_nxg.extend(nxg)
+        return all_ts, all_nxg
     else:
         raise ValueError(f"File reader: Format {informat} for {infile} not yet supported!")
-    return [ts, nxg]
-
 
 
 #########################
 # read reaxff bond file #
 #########################
-def read_reax(infile:str) -> list[ list[int,], list[nx.Graph,] ]:
+def read_reax(infile: str) -> list[list[int,], list[nx.Graph,]]:
+    # Initilize variables
+    idx = -1
+    ts = []
+    pnum = []
+    nxg = []
+
     # open file
     log.info(f"Reading reax file: {infile}")
     opener = gzip.open if infile.endswith(".gz") else open
     mode = "rt" if infile.endswith(".gz") else "r"
     with opener(infile, mode) as f:
-    
-        # Initilize variables
-        idx = -1
-        ts = []
-        pnum = []
-        nxg = []
-    
         # iterate file line by line (more efficient than repeated readline calls)
         for line in f:
             if not line:
@@ -100,18 +173,12 @@ def read_reax(infile:str) -> list[ list[int,], list[nx.Graph,] ]:
                         cur_varline = next_varline
 
                 # End of timestep, fill Graph with atoms and bonds for this timestep
-                # nodes = atoms
-                #tmp = [(a, {"type": b, "abo": c, "nlp": d, "q": e,
-                #            "element":ON2ELEM.get(TYPE2ON.get(b,0),b),
-                #            "color":ON2HEX.get(TYPE2ON.get(b,0),DEFAULT_COLOR),
-                #            "mol": f})
-                #       for a, b, c, d, e, f in zip(atomID, atomType, abo, nlp, q, mol)]
                 tmp = [(a, {"type": b}) for a, b in zip(atomID, atomType)]
-                nxg[idx].add_nodes_from(tmp)    
-            
+                nxg[idx].add_nodes_from(tmp)
+
                 # edges = bonds
                 tmp = [(a, b, {"bo": c}) for a, b, c in bonds]
                 nxg[idx].add_edges_from(tmp)
-                
+
         # implicit f.close() via context manager
     return [ts, nxg]
