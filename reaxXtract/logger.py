@@ -52,5 +52,5 @@ def configure_log(level: Optional[str] = None, force: bool = False) -> None:
 
 log = logging.getLogger("reaxXtract")
 log.addFilter(DuplicateFilter())
-# configure default on import (non-force) — can be overridden by calling configure(...) from entrypoint
+# configure default on import (non-force) ï¿½ can be overridden by calling configure(...) from entrypoint
 configure_log()

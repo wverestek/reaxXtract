@@ -1,7 +1,7 @@
 import os.path, sys, re
 import random
 
-from typing import TextIO
+from typing import Counter, TextIO
 
 import networkx as nx
 #from networkx.readwrite.nx_ import edges_from_line
@@ -20,7 +20,6 @@ configure_log(level="DEBUG", force=True)
 
 #import pdb
 #pdb.set_trace()
-
 
 class ReaxXtract:
     ##############
@@ -210,7 +209,7 @@ class ReaxXtract:
             rxns.to_csv("rxns_summary.csv")
         """
 
-        if not self.nxg or not self.ts or self.frames.empty:
+        if self.frames.empty:
             log.info(f"No bond data read yet, reading now... {self.infile}")
             self.read()
 
@@ -265,7 +264,6 @@ class ReaxXtract:
 
         f_rxn.close()
         
-
         # adding newly found reactions to self.rxns DataFrame
         # first search
         if self.rxns.empty:
@@ -377,20 +375,24 @@ class ReaxXtract:
 
         rxn_id = np.array([None] * crxns)
         rxn_count = np.array([0] * crxns)
-        rxn_counter = np.array([0] * nrxns)
+        counter_arr = np.array([0] * nrxns)
 
         for idx, h in enumerate(rxn_hashes):
             rxn_id[idx] = hash2id[h]
-            rxn_counter[hash2id[h]] += 1
-            rxn_count[idx] = rxn_counter[hash2id[h]]
-
+            counter_arr[hash2id[h]] += 1
+            rxn_count[idx] = counter_arr[hash2id[h]]
+        
         self.rxns["rxnID"] = rxn_id
         self.rxns["rxnCount"] = rxn_count
         
 
     # remove reactions that reverse in stabilize frames #
-    def remove_reversing_reactions(self):
+    def remove_reversing_reactions(self,nframes:int=None,df:pd.core.frame.DataFrame=None):
         log.info("Removing reactions that reverse in stabilize frames...")
+        self.stabiframe = nframes or self.stabiframe
+
+        # use on self.rxns or another Pandas DataFrame if provided as argument
+        df = df or self.rxns
 
         rmv_idx = []
         for idx,row in self.rxns.iterrows():
@@ -414,13 +416,15 @@ class ReaxXtract:
         if len(rmv_idx) > 0:
             log.info(f"Reaction found that reverses within {self.stabiframe} frames, removing reactions")
             log.info(f"{df.iloc[rmv_idx]}")
-            df = self.rxns[rmv_idx]
-            self.rxns.drop(rmv_idx, inplace=True)
+            df_rmv = df.iloc[rmv_idx].copy()
+            df.drop(rmv_idx, inplace=True)
+            self.renumber_and_count_rxns()
         else:
-            df = None
-
-        return df
-
+            df_rmv = None
+        
+        log.info(f"Number of reactions removed: {len(rmv_idx)}")
+        log.info(f"expected return argument: df with reactions that reverse within {self.stabiframe} frames, or None if no such reactions found")
+        return df_rmv
 
     # plot reactions #
     def plot_rxns(self):
