@@ -1,0 +1,1 @@
+import reaxXtract as rxt; rxns=rxt.ReaxXtract(infile="bonds.reaxff.dump",atom_type_map="1:C,2:H,3:H,4:O,5:O,6:O,7:O,8:O"); rxns.read(); rxns.find_rxns()

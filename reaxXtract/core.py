@@ -22,7 +22,6 @@ configure_log(level="DEBUG", force=True)
 #pdb.set_trace()
 
 
-
 class ReaxXtract:
     ##############
     # initialize #
@@ -162,8 +161,6 @@ class ReaxXtract:
         else:
             self.maxframe_offset += self.frames["timestep"].count()    
             self.frames = pd.DataFrame({"timestep": ts,"graph": nxg})
-            
-        
 
 
     ##################
@@ -278,17 +275,12 @@ class ReaxXtract:
             df_file["frame"] = df_file["frame"] + self.maxframe_offset
             self.rxns = pd.concat([self.rxns,df_file],ignore_index=True)
 
-        #self.df2 = pd.DataFrame(tmplist)
-        self.df1 = df_file.copy()
-
-        #if self.stabiframe > 0 and df_file is not None and not df_file.empty:
-        #    df2 = self.remove_reversing_reactions(df_file)
-        #    self.rxns = pd.concat([self.rxns,df2],ignore_index=True)
-        #else:
-        #    self.rxns = pd.concat([self.rxns,df_file],ignore_index=True)
+        #self.df1 = df_file.copy()
+        # renumber reactions and count unique reactions
+        self.renumber_and_count_rxns()
 
 
-    
+    # find reacting atoms for two frames #
     def find_reacting_atoms_for_two_frames(self,Gbefore:nx.Graph,Gafter:nx.Graph):
         # compare graphs, edges that are not in both graphs => reaction
         #reacting_edges = nx.symmetric_difference(Gbefore,Gafter).edges()
@@ -335,6 +327,8 @@ class ReaxXtract:
 
         return reacting_edges_before_sets, reacting_edges_after_sets, reacting_atoms_sets
 
+
+    # convert reaction sets to pandas DataFrame format for further analysis and plotting #
     def rsets_to_pd(self,before:int,after:int,reaction_sets,edges_sets_before,edges_sets_after):
         """
         Convert reaction sets and their associated edge changes into 
@@ -373,11 +367,33 @@ class ReaxXtract:
                              "rxn_hash_before":hash_before,"rxn_hash_after":hash_after})
         return pd.DataFrame(tmp_list)
 
-    def remove_reversing_reactions(self,df:pd.DataFrame):
-        # remove reactions that reverse in stabilize frames
+    
+    # renumber reactions and count unique reactions #
+    def renumber_and_count_rxns(self):
+        crxns = self.rxns["rxn_hash_before"].count() # total count of reactions
+        rxn_hashes = (self.rxns["rxn_hash_before"] + [":"]*crxns + self.rxns["rxn_hash_after"]).tolist()
+        hash2id = {h: i for i, h in enumerate(set(rxn_hashes))}     # dict: rxn_hash => rxn_id
+        nrxns = np.max(list(hash2id.values()))+1                    # number of individual reactions
+
+        rxn_id = np.array([None] * crxns)
+        rxn_count = np.array([0] * crxns)
+        rxn_counter = np.array([0] * nrxns)
+
+        for idx, h in enumerate(rxn_hashes):
+            rxn_id[idx] = hash2id[h]
+            rxn_counter[hash2id[h]] += 1
+            rxn_count[idx] = rxn_counter[hash2id[h]]
+
+        self.rxns["rxnID"] = rxn_id
+        self.rxns["rxnCount"] = rxn_count
+        
+
+    # remove reactions that reverse in stabilize frames #
+    def remove_reversing_reactions(self):
         log.info("Removing reactions that reverse in stabilize frames...")
+
         rmv_idx = []
-        for idx,row in df.iterrows():
+        for idx,row in self.rxns.iterrows():
             hash_before = row["rxn_hash_before"]
             hash_after = row["rxn_hash_after"]
             current_frame = row["frame"]
@@ -398,10 +414,15 @@ class ReaxXtract:
         if len(rmv_idx) > 0:
             log.info(f"Reaction found that reverses within {self.stabiframe} frames, removing reactions")
             log.info(f"{df.iloc[rmv_idx]}")
-            df.drop(rmv_idx, inplace=True)
+            df = self.rxns[rmv_idx]
+            self.rxns.drop(rmv_idx, inplace=True)
+        else:
+            df = None
 
         return df
 
+
+    # plot reactions #
     def plot_rxns(self):
         if self.rxns.empty:
             log.warn("No reactions found to plot.")
@@ -475,9 +496,6 @@ class ReaxXtract:
             plt.tight_layout()
             f_out = os.path.join(outfolder, self.basename + "_" + str(timestep) + "_Rxn" + str(idx) + ".png")
             plt.savefig(f_out,dpi=200)
-
-
-
 
 
     # find and count rings #
