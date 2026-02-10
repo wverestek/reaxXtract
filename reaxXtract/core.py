@@ -23,11 +23,12 @@ class ReaxXtract:
     ##############
     # initialize #
     ##############
-    def __init__(self, infile: Union[str, List[str]] = "", informat: str = "reaxff", basename: str = "",
-                 startstep: int = 0, stopstep: int = sys.maxsize, checkframe: int = 1, stepframe: int = 1,
-                 stabiframes: int = 0,
-                 hash_by: str = "type", rxn_bond_cutoff: int = 1, plot_bonds_cutoff: int = 5, seed: int = 42,
+    def __init__(self, 
+                 infile: Union[str, List[str]] = "", informat: str = "reaxff", basename: str = "",
                  atom_type_map: str = "",
+                 checkframe: int = 1, stepframe: int = 1, stabiframes: int = 0,
+                 hash_by: str = "type", 
+                 rxn_bond_cutoff: int = 1, plot_bonds_cutoff: int = 5, seed: int = 42,
                  ring_counter: bool = False, ring_limits=(3, 10)):
         """
         A class to extract changes in bond topology over time.
@@ -275,7 +276,7 @@ class ReaxXtract:
             Gbefore = self.frames["graph"].iloc[idx-cf]
             Gafter = self.frames["graph"].iloc[idx]
 
-            log.info(f"evaluating frame: {idx} timestep: {self.frames['timestep'].iloc[idx]}")
+            log.info(f"evaluating frame: {idx} ({self.frames["frame"].iloc[idx]}) timestep: {self.frames['timestep'].iloc[idx]}")
             # find reacting atoms
             [edges_sets_before,edges_sets_after, reaction_sets] = self.find_reacting_atoms_for_two_frames(Gbefore, Gafter)   # list(set(int,),set(int,))
             log.debug(f"reaction_sets: {reaction_sets} with edges_before: {edges_sets_before} and edges_after: {edges_sets_after}")
@@ -382,7 +383,7 @@ class ReaxXtract:
             Gafter = self.frames["graph"].iloc[after].subgraph(atoms_plot).copy()
             hash_after = nx.weisfeiler_lehman_graph_hash(Gafter.subgraph(atoms_env), node_attr=self.hash_by)
 
-            tmp_list.append({"frame":after,
+            tmp_list.append({"frame":self.frames["frame"].iloc[after],
                              "timestep":self.frames["timestep"].iloc[after],
                              "rxnID":None,"rxnCount":None,
                              "edges_before":edges_before,"edges_after":edges_after,
@@ -447,6 +448,7 @@ class ReaxXtract:
             #log.info(f"{df.iloc[rmv_idx]}")
             #df_rmv = df.iloc[rmv_idx].copy()
             df_rmv = df.drop(rmv_idx, inplace=True)
+            df.reset_index(drop=True, inplace=True)
             self.renumber_and_count_rxns()
         else:
             df_rmv = None
