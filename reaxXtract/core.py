@@ -1,7 +1,7 @@
 import os.path, sys, re
 import random
 
-from typing import TextIO
+from typing import TextIO, Union, List
 
 import networkx as nx
 import numpy as np
@@ -23,17 +23,23 @@ class ReaxXtract:
     ##############
     # initialize #
     ##############
-    def __init__(self, infile:str="", informat:str="reaxff", basename:str="",
-                 startstep:int=0, stopstep:int=sys.maxsize, checkframe:int=1, stepframe:int=1,
-                 stabiframes:int=0,
-                 hash_by:str="type", rxn_bond_cutoff:int=1, plot_bonds_cutoff:int=5, seed:int=42,
-                 atom_type_map:str="",
-                 ring_counter=False,ring_limits=(3,10)):
+    def __init__(self, infile: Union[str, List[str]] = "", informat: str = "reaxff", basename: str = "",
+                 startstep: int = 0, stopstep: int = sys.maxsize, checkframe: int = 1, stepframe: int = 1,
+                 stabiframes: int = 0,
+                 hash_by: str = "type", rxn_bond_cutoff: int = 1, plot_bonds_cutoff: int = 5, seed: int = 42,
+                 atom_type_map: str = "",
+                 ring_counter: bool = False, ring_limits=(3, 10)):
         """
         A class to extract changes in bond topology over time.
-        
-        infile : str
-            A bond information file, that should be read. Can also be set in function read_bonds(infile=...)
+
+        infile : str or list[str]
+            A bond information file, a list of files, or glob pattern(s). The
+            reader will accept a single filename or multiple files. For
+            backward compatibility `self.infile` is the first filename (or "").
+        infile : str or list[str]
+            A bond information file, a list of files, or glob pattern(s). The
+            reader will accept a single filename or multiple files. For
+            backward compatibility `self.infile` is the first filename (or "").
         informat : str
             file type of the file containing bond information. Default "reaxff"
         basename : str
@@ -52,18 +58,29 @@ class ReaxXtract:
         """
         
         log.info(f"Initializing ReaxXtract class object...")
-        self.name:str = "ReaxXtract"
-        self.infile:str = infile
-        self.informat:str = informat.lower()
+        self.name: str = "ReaxXtract"
+
+        # preserve the raw input(s) and provide a canonical list + first-file convenience attribute
+        if isinstance(infile, (list, tuple)):
+            self.infiles: List[str] = list(infile)
+        elif infile is None or infile == "":
+            self.infiles = []
+        else:
+            self.infiles = [infile]
+
+        # backward-compatible single-file attribute (used in many places)
+        self.infile: str = self.infiles[0] if len(self.infiles) > 0 else ""
+
+        self.informat: str = informat.lower()
         if len(basename) > 0:
             self.basename:str = basename
         else:
             self.basename:str = re.sub(r'(\.(?:gz|txt|dat|data|dump))+$', '', os.path.basename(self.infile))
         
-        self.startstep:int = int(startstep)     # necessary?
-        self.stopstep:int = int(stopstep)       # necessary?
-        self.startidx:int = 0                   # necessary?
-        self.stopidx:int = 0                    # necessary?
+        #self.startstep:int = int(startstep)     # necessary?
+        #self.stopstep:int = int(stopstep)       # necessary?
+        #self.startidx:int = 0                   # necessary?
+        #self.stopidx:int = 0                    # necessary?
         self.checkframe:int = int(checkframe)   # necessary?
         self.stabiframe:int = int(stabiframes)
         self.stepframe:int = int(stepframe)     # necessary?
@@ -71,7 +88,7 @@ class ReaxXtract:
         
         self.ts:list = []                                   # list of timesteps
         self.nxg:list = []                                  # list of networkx Graphs for each timestep
-        self.frames:pd.DataFrame = pd.DataFrame(columns=("timestep","graph")) # DataFrame with columns ['timestep','graph']
+        self.frames:pd.DataFrame = pd.DataFrame(columns=("frame","timestep","graph")) # DataFrame with columns ['timestep','graph']
 
         self.rxns:pd.DataFrame = pd.DataFrame(
             columns=("frame","timestep","rxnID","rxnCount",
@@ -79,15 +96,15 @@ class ReaxXtract:
                      "atoms_rxn","atoms_env","atoms_plot",
                      "Gbefore","Gafter",
                      "rxn_hash_before","rxn_hash_after"))                          # DataFrame with reactions found
-        self.rxn_sets_before:list = [[]]                    # list of reaction sets before reaction
-        self.rxn_sets_after:list = [[]]
-        self.rxn_hashes_before:list = [[]]
-        self.rxn_hashes_after:list = [[]]
+        #self.rxn_sets_before:list = [[]]                    # list of reaction sets before reaction
+        #self.rxn_sets_after:list = [[]]
+        #self.rxn_hashes_before:list = [[]]
+        #self.rxn_hashes_after:list = [[]]
         self.hash_by:str = hash_by
-        self.rxn_elements_before = [[]]
-        self.rxn_elements_after = [[]]
-        self.rxn_id = []                                    # list of unique reaction IDs found
-        self.rxn_count = []                                 # count of each reaction found
+        #self.rxn_elements_before = [[]]
+        #self.rxn_elements_after = [[]]
+        #self.rxn_id = []                                    # list of unique reaction IDs found
+        #self.rxn_count = []                                 # count of each reaction found
 
         self.ring_counter = ring_counter
         self.ring_limits = ring_limits
@@ -119,29 +136,21 @@ class ReaxXtract:
           - self.frames (pd.DataFrame) with columns ['timestep','graph']
         Returns the frames DataFrame.
         """
-        infile_local = infile or self.infile
+        # choose infile to pass to reader.read_bonds:
+        # - if caller provided `infile` use that
+        # - else prefer self.infiles (list) if present, otherwise self.infile (string)
+        if infile is not None:
+            infile_local = infile
+        else:
+            infile_local = self.infiles if len(self.infiles) > 0 else self.infile
+
         informat_local = informat or self.informat
         if not infile_local:
             raise ValueError("No infile supplied to read()")
 
-        # read bond file
+        # read bond file(s)
         ts, nxg = read_bonds(infile_local, informat_local)
-
-        # determine start and stop indices
-        ### necessary?
-        if self.startstep in ts:
-            self.startidx = ts.index(self.startstep)
-        else:
-            self.startidx = 0
-            log.warn(f"Warning: startstep {self.startstep} not found in timesteps, setting to first timestep {ts[self.startidx]}")    
-        if self.stopidx > len(ts) - 1 or self.stopstep not in ts:
-            self.stopidx = len(ts) - 1
-            log.warn(f"Warning: stopstep {self.stopstep} not found in timesteps, setting to last timestep {ts[self.stopidx]}")
-        else:
-            self.stopidx = ts.index(self.stopstep)
-
         # set element attribute for each node in each graph
-        
         for i,g in enumerate(nxg):
             for n, data in g.nodes(data=True):
                 atom_type = data.get("type", None)
@@ -151,13 +160,40 @@ class ReaxXtract:
                 else:
                     nx.set_node_attributes(nxg[i], {n: element}, name="element")
                     log.warn(f"Warning: atom type {atom_type} not in atom_type_mapping, setting element to 'X'",stacklevel=2)
-        #self.ts, self.nxg = ts, nxg
         
+        frames_arr = list(range(len(ts)))
         if self.frames.empty:
-            self.frames = pd.DataFrame({"timestep": ts,"graph": nxg})
+            # first read, no existing frames, just set frames DataFrame
+            self.frames = pd.DataFrame({"frame":frames_arr,"timestep": ts,"graph": nxg})
         else:
-            self.maxframe_offset += self.frames["timestep"].count()    
-            self.frames = pd.DataFrame({"timestep": ts,"graph": nxg})
+            # subsequent read
+            # drop frames in case large files are read in multiple calls to avoid 
+            # memory issues, but keep stabilize frames for reaction checking
+            maxframe_keep =  self.frames["frame"].iloc[-1] - self.stabiframe
+            idx = np.where(self.frames["frame"].lt(maxframe_keep))[0].tolist()
+            _ = self.frames.drop(index=idx, inplace=True)
+            # renumber new frames to continue from last frame + 1
+            maxframe_old = self.frames["frame"].max() if not self.frames.empty else -1
+            frames_arr = [i + maxframe_old + 1 for i in frames_arr]
+            # concatenate new frames to existing frames DataFrame
+            self.frames = pd.concat([self.frames, 
+                                     pd.DataFrame({"frame":frames_arr,"timestep": ts,"graph": nxg})],
+                                    ignore_index=True)
+
+        # determine start and stop indices
+        ### necessary?
+        #if self.startstep in self.frames:
+        #    self.startidx = ts.index(self.startstep)
+        #else:
+        #    self.startidx = 0
+        #    log.warn(f"Warning: startstep {self.startstep} not found in timesteps, setting to first timestep {ts[self.startidx]}")    
+        #if self.stopidx > len(ts) - 1 or self.stopstep not in ts:
+        #    self.stopidx = len(ts) - 1
+        #    log.warn(f"Warning: stopstep {self.stopstep} not found in timesteps, setting to last timestep {ts[self.stopidx]}")
+        #else:
+        #    self.stopidx = ts.index(self.stopstep)
+
+
 
 
     ##################
@@ -218,25 +254,17 @@ class ReaxXtract:
         f_rxn.write(mystr+"\n")
         
 
-        start = self.startidx
-        stop = self.stopidx - self.stabiframe
+        start = 0 
+        stop =  self.frames["frame"].count() - self.stabiframe 
         cf = self.checkframe
         fs = self.stepframe
 
-
-        self.rxn_sets_before = [[] for _ in range(len(self.ts))]
-        self.rxn_sets_after =  [[] for _ in range(len(self.ts))]
-        self.rxn_hashes_before = [[] for _ in range(len(self.ts))]
-        self.rxn_hashes_after = [[] for _ in range(len(self.ts))]
-        self.rxn_elements_before = [[] for _ in range(len(self.ts))]
-        self.rxn_elements_after = [[] for _ in range(len(self.ts))]
-        self.rxn_id = []
-        self.rxn_count = []
+        #self.rxn_id = []
+        #self.rxn_count = []
 
         df_file = pd.DataFrame(columns=self.rxns.columns)
-        tmplist = []
-
-        for idx in range(start + cf, stop+1, fs):
+        
+        for idx in range(start + cf, stop, fs):
             # dicts for conversion
             node2element = nx.get_node_attributes(self.frames["graph"].iloc[idx], name="element")
             node2type    = nx.get_node_attributes(self.frames["graph"].iloc[idx], name="type")
@@ -366,6 +394,10 @@ class ReaxXtract:
     
     # renumber reactions and count unique reactions #
     def renumber_and_count_rxns(self):
+        if self.rxns.empty:
+            log.info("No reactions to renumber and count.")
+            return
+
         crxns = self.rxns["rxn_hash_before"].count() # total count of reactions
         rxn_hashes = (self.rxns["rxn_hash_before"] + [":"]*crxns + self.rxns["rxn_hash_after"]).tolist()
         hash2id = {h: i for i, h in enumerate(set(rxn_hashes))}     # dict: rxn_hash => rxn_id
