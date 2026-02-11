@@ -401,7 +401,7 @@ class ReaxXtract:
             return
 
         crxns = self.rxns["rxn_hash_before"].count() # total count of reactions
-        rxn_hashes = (self.rxns["rxn_hash_before"] + [":"]*crxns + self.rxns["rxn_hash_after"]).tolist()
+        rxn_hashes = self.rxns["rxn_hash_before"] + [":"]*crxns + self.rxns["rxn_hash_after"]
         hash2id = dict(enumerate(pd.unique(rxn_hashes)))            # array of unique rxn_hashes in order of appearance
         nrxns = len(hash2id.keys())                                 # number of individual reactions
 
