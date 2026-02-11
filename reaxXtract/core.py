@@ -468,7 +468,10 @@ class ReaxXtract:
         for idx, rxn in self.rxns.iterrows():
             frame = rxn["frame"]
             timestep = rxn["timestep"]
-            
+            rxnID = rxn["rxnID"]
+            hash_before = rxn["rxn_hash_before"]
+            hash_after = rxn["rxn_hash_after"]
+
             Gbefore = rxn["Gbefore"]
             Gafter = rxn["Gafter"]
             #active_edges_before = nx.difference(Gbefore, Gafter).edges()
@@ -487,7 +490,7 @@ class ReaxXtract:
             # before reaction
             # prepare data
             plt.figure(figsize=(14,6))
-            plt.suptitle(f"Frame: {frame} Timestep: {timestep}")
+            plt.suptitle(f"Timestep: {timestep} RxnID: {rxnID}\n {hash_before}:{hash_after}")
             plt.subplot(1, 2, 1)
             plt.title("Before")
             node2elem = nx.get_node_attributes(Gbefore, name="element")
@@ -529,6 +532,7 @@ class ReaxXtract:
             plt.tight_layout()
             f_out = os.path.join(outfolder, self.basename + "_" + str(timestep) + "_Rxn" + str(idx) + ".png")
             plt.savefig(f_out,dpi=200)
+            plt.close()
 
 
     # find and count rings #
