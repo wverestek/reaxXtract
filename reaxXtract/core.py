@@ -1,3 +1,4 @@
+from fileinput import filename
 import os.path, sys, re
 import random
 
@@ -531,9 +532,11 @@ class ReaxXtract:
                     with_labels=True, labels=node_labels, font_size=6,
                     node_size=300, edge_color="black", width=bo)
             plt.tight_layout()
-            f_out = os.path.join(outfolder, self.basename + "_" + str(timestep) + "_Rxn" + str(rxnID) + "No" + str(rxnCount) + ".png")
+            fig = plt.gcf()
+            filename = f"{self.basename}_timestep{timestep}_rxnID{rxnID}_rxnCount{rxnCount}.png"
+            f_out = os.path.join(outfolder, filename)
             plt.savefig(f_out,dpi=200)
-            plt.close()
+            plt.close(fig)
 
 
     # find and count rings #
