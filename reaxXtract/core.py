@@ -1,8 +1,14 @@
-from fileinput import filename
-import os.path, sys, re
+#from fileinput import filename
+import os, os.path
+os.environ.setdefault("MPLBACKEND", "Agg")
+import sys, re
 import random
 
 from typing import TextIO, Union, List
+
+import matplotlib
+# Use non-interactive backend to avoid Qt/X11 errors in headless environments
+matplotlib.use("Agg")
 
 import networkx as nx
 import numpy as np
@@ -445,7 +451,7 @@ class ReaxXtract:
                 rmv_idx.append(rev_idx)
         
         if len(rmv_idx) > 0:
-            log.info(f"Reaction(s) found that reverses within {self.stabiframe} frames, removing reactions")
+            log.info(f"{len(rmv_idx)} Reaction(s) found that reverse within {self.stabiframe} frames, removing reactions")
             #log.info(f"{df.iloc[rmv_idx]}")
             #df_rmv = df.iloc[rmv_idx].copy()
             df_rmv = df.drop(rmv_idx, inplace=True)
@@ -462,7 +468,7 @@ class ReaxXtract:
             log.warn("No reactions found to plot.")
             return
         cf = self.checkframe
-        outfolder = self.basename + ".dir_df"
+        outfolder = self.basename + "_dir"
         if not os.path.exists(outfolder):
             os.makedirs(outfolder, exist_ok=True)
 
@@ -492,7 +498,7 @@ class ReaxXtract:
             # before reaction
             # prepare data
             plt.figure(figsize=(14,6))
-            plt.suptitle(f"Timestep: {timestep} RxnID: {rxnID}\n {hash_before}:{hash_after}")
+            plt.suptitle(f"Timestep: {timestep} RxnType: {rxnID}\n {hash_before}:{hash_after}")
             plt.subplot(1, 2, 1)
             plt.title("Before")
             node2elem = nx.get_node_attributes(Gbefore, name="element")
@@ -504,7 +510,7 @@ class ReaxXtract:
                 bo = [tmp for tmp in list(nx.get_edge_attributes(Gbefore, "bo").values())]
             else:
                 bo = [1.0 for i in Gbefore.edges()]
-            pos_before = nx.spring_layout(Gbefore, iterations=50, pos=pos)
+            pos_before = nx.spring_layout(Gbefore, iterations=75, pos=pos)
             # plot data
             #nx.draw_networkx_edges(Gbefore, edgelist=active_edges_before, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos)
             nx.draw_networkx_edges(Gbefore, edgelist=active_edges, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos_before)
@@ -524,7 +530,7 @@ class ReaxXtract:
                 bo = [tmp for tmp in list(nx.get_edge_attributes(Gbefore, "bo").values())]
             else:
                 bo = [1.0 for i in Gbefore.edges()]
-            pos_after = nx.spring_layout(Gafter, iterations=50, pos=pos)
+            pos_after = nx.spring_layout(Gafter, iterations=75, pos=pos)
             # plot data
             #nx.draw_networkx_edges(Gafter, edgelist=active_edges_after, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos)
             nx.draw_networkx_edges(Gafter, edgelist=active_edges, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos_after)
@@ -533,8 +539,8 @@ class ReaxXtract:
                     node_size=300, edge_color="black", width=bo)
             plt.tight_layout()
             fig = plt.gcf()
-            filename = f"{self.basename}_timestep{timestep}_rxnID{rxnID}_rxnCount{rxnCount}.png"
-            f_out = os.path.join(outfolder, filename)
+            fileout = f"{self.basename}_timestep{timestep}_rxnType{rxnID}_rxnCount{rxnCount}.png"
+            f_out = os.path.join(outfolder, fileout)
             plt.savefig(f_out,dpi=200)
             plt.close(fig)
 
