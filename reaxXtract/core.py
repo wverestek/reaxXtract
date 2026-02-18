@@ -1,4 +1,5 @@
 #from fileinput import filename
+from math import e
 import os, os.path
 os.environ.setdefault("MPLBACKEND", "Agg")
 import sys, re
@@ -36,7 +37,7 @@ class ReaxXtract:
                  checkframe: int = 1, stepframe: int = 1, stabiframes: int = 0,
                  hash_by: str = "type", 
                  rxn_bond_cutoff: int = 1, plot_bonds_cutoff: int = 5, seed: int = 42,
-                 ring_counter: bool = False, ring_limits=(3, 10)):
+                 ring_counter: bool = False, loop_limits:tuple[int,int]=None):
         """
         A class to extract changes in bond topology over time.
 
@@ -68,60 +69,42 @@ class ReaxXtract:
         log.info(f"Initializing ReaxXtract class object...")
         self.name: str = "ReaxXtract"
 
-        # preserve the raw input(s) and provide a canonical list + first-file convenience attribute
-        if isinstance(infile, (list, tuple)):
-            self.infiles: List[str] = list(infile)
-        elif infile is None or infile == "":
-            self.infiles = []
-        else:
-            self.infiles = [infile]
-
-        # backward-compatible single-file attribute (used in many places)
-        self.infile: str = self.infiles[0] if len(self.infiles) > 0 else ""
-
+        # store input(s): `infiles` may be a single filename (str) or a list of filenames
+        # reader.read_bonds accepts either a string, a list or glob pattern(s).
+        self.infile: Union[str, List[str]] = infile
         self.informat: str = informat.lower()
-        if len(basename) > 0:
-            self.basename:str = basename
-        else:
-            self.basename:str = re.sub(r'(\.(?:gz|txt|dat|data|dump))+$', '', os.path.basename(self.infile))
+        # derive basename based on only or first filename string
+        if isinstance(self.infile, str) and len(self.infile) > 0:
+            self.basename: str = re.sub(r'(\.(?:gz|txt|dat|data|dump))+$', '', os.path.basename(self.infile))
+        elif isinstance(self.infile, list):
+            self.basename: str = re.sub(r'(\.(?:gz|txt|dat|data|dump))+$', '', os.path.basename(self.infile[0]))
         
-        #self.startstep:int = int(startstep)     # necessary?
-        #self.stopstep:int = int(stopstep)       # necessary?
-        #self.startidx:int = 0                   # necessary?
-        #self.stopidx:int = 0                    # necessary?
         self.checkframe:int = int(checkframe)   # necessary?
         self.stabiframe:int = int(stabiframes)
         self.stepframe:int = int(stepframe)     # necessary?
         self.maxframe_offset = 0
         
-        self.ts:list = []                                   # list of timesteps
-        self.nxg:list = []                                  # list of networkx Graphs for each timestep
+        # pandas DataFrame to store global bond topology
         self.frames:pd.DataFrame = pd.DataFrame(columns=("frame","timestep","graph")) # DataFrame with columns ['timestep','graph']
-
+        
+        # pandas DataFrame to store reactions found
         self.rxns:pd.DataFrame = pd.DataFrame(
             columns=("frame","timestep","rxnID","rxnCount",
                      "edges_before","edges_after",
                      "atoms_rxn","atoms_env","atoms_plot",
                      "Gbefore","Gafter",
                      "rxn_hash_before","rxn_hash_after"))                          # DataFrame with reactions found
-        #self.rxn_sets_before:list = [[]]                    # list of reaction sets before reaction
-        #self.rxn_sets_after:list = [[]]
-        #self.rxn_hashes_before:list = [[]]
-        #self.rxn_hashes_after:list = [[]]
-        self.hash_by:str = hash_by
-        #self.rxn_elements_before = [[]]
-        #self.rxn_elements_after = [[]]
-        #self.rxn_id = []                                    # list of unique reaction IDs found
-        #self.rxn_count = []                                 # count of each reaction found
-
-        self.ring_counter = ring_counter
-        self.ring_limits = ring_limits
-        self.ring_sets = []
-
-        self.rxn_bond_cutoff:int = int(rxn_bond_cutoff)     # number of bonds distance that are considered one reaction, default: 0
-        self.plot_bonds_cutoff:int = int(plot_bonds_cutoff)               # number of bonds distance to include for plots
-        random.seed(a=int(seed))                            # reproducibility of pyplot plots
         
+        # build hash based on node attribute 'element' or 'type'
+        self.hash_by:str = hash_by                      
+        
+        self.rxn_bond_cutoff:int = int(rxn_bond_cutoff)         # number of bonds distance that are considered one reaction, default: 0
+        self.plot_bonds_cutoff:int = int(plot_bonds_cutoff)     # number of bonds distance to include for plots
+        random.seed(a=int(seed))                                # reproducibility of pyplot plots
+
+        # find and count loops in each global frame        
+        self.loop_limits = loop_limits
+
         # expose ON2ELEM/ON2HEX as instance attributes so the rest of the class can use them
         self.on2elem:dict = ON2ELEM
         self.on2hex:dict = ON2HEX
@@ -130,13 +113,12 @@ class ReaxXtract:
         # atom mapping from type to ordinal number -> user input as str
         self.atom_type_map = atom_type_map
         self.type2on:dict = convert_str2dict(self.atom_type_map)
-        #self.elem2hex:dict = {self.on2elem[i]:self.on2hex[i] for i in range(1,len(self.on2elem)+1)}
         self.elem2hex:dict = {self.on2elem[i]:self.on2hex[i] for i in self.on2elem.keys()}
 
     ##############
     # read bonds #
     ##############
-    def read(self, infile:str=None, informat:str=None):
+    def read(self, infile: Union[str, List[str]] = None, informat: str = None):
         """
         Read bond file and populate instance state:
           - self.ts, self.nxg
@@ -150,7 +132,8 @@ class ReaxXtract:
         if infile is not None:
             infile_local = infile
         else:
-            infile_local = self.infiles if len(self.infiles) > 0 else self.infile
+            # use self.infile (string or list)
+            infile_local = self.infile
 
         informat_local = informat or self.informat
         if not infile_local:
@@ -158,6 +141,7 @@ class ReaxXtract:
 
         # read bond file(s)
         ts, nxg = read_bonds(infile_local, informat_local)
+
         # set element attribute for each node in each graph
         for i,g in enumerate(nxg):
             for n, data in g.nodes(data=True):
@@ -166,7 +150,7 @@ class ReaxXtract:
                     element = self.type2on[atom_type]
                     nx.set_node_attributes(nxg[i], {n: element}, name="element")
                 else:
-                    nx.set_node_attributes(nxg[i], {n: element}, name="element")
+                    nx.set_node_attributes(nxg[i], {n: "X"}, name="element")
                     log.warn(f"Warning: atom type {atom_type} not in atom_type_mapping, setting element to 'X'",stacklevel=2)
         
         frames_arr = list(range(len(ts)))
@@ -401,13 +385,16 @@ class ReaxXtract:
 
     
     # renumber reactions and count unique reactions #
-    def renumber_and_count_rxns(self):
-        if self.rxns.empty:
+    def renumber_and_count_rxns(self, df:pd.core.frame.DataFrame=None):
+        # use on self.rxns or another Pandas DataFrame if provided as argument
+        df = df or self.rxns
+
+        if df.empty:
             log.info("No reactions to renumber and count.")
             return
 
-        crxns = self.rxns["rxn_hash_before"].count() # total count of reactions
-        rxn_hashes = self.rxns["rxn_hash_before"] + [":"]*crxns + self.rxns["rxn_hash_after"]
+        crxns = df["rxn_hash_before"].count() # total count of reactions
+        rxn_hashes = df["rxn_hash_before"] + [":"]*crxns + df["rxn_hash_after"]
         hash2id = dict((v,k) for k,v in dict(enumerate(pd.unique(rxn_hashes))).items())       # array of unique rxn_hashes in order of appearance
         nrxns = len(hash2id.keys())                                 # number of individual reactions
 
@@ -420,16 +407,18 @@ class ReaxXtract:
             counter_arr[hash2id[h]] += 1
             rxn_count[idx] = counter_arr[hash2id[h]]
         
-        self.rxns["rxnID"] = rxn_id
-        self.rxns["rxnCount"] = rxn_count
+        df["rxnID"] = rxn_id
+        df["rxnCount"] = rxn_count
+
+        return df
         
 
     # remove reactions that reverse in stabilize frames #
     def remove_reversing_reactions(self,nframes:int=None,df:pd.core.frame.DataFrame=None):
-        self.stabiframe = nframes or self.stabiframe
-        
         # use on self.rxns or another Pandas DataFrame if provided as argument
         df = df or self.rxns
+
+        self.stabiframe = nframes or self.stabiframe
 
         rmv_idx = []
         for idx,row in self.rxns.iterrows():
@@ -460,19 +449,23 @@ class ReaxXtract:
         else:
             df_rmv = None
         
-        return df_rmv
+        return df, df_rmv
 
     # plot reactions #
-    def plot_rxns(self):
-        if self.rxns.empty:
+    def plot_rxns(self, df:pd.core.frame.DataFrame=None, basename:str=None):
+        # use on self.rxns or another Pandas DataFrame if provided as argument
+        df = df or self.rxns
+
+        if df.empty:
             log.warn("No reactions found to plot.")
             return
+
         cf = self.checkframe
-        outfolder = self.basename + "_dir"
+        outfolder = basename or self.basename+"_dir"
         if not os.path.exists(outfolder):
             os.makedirs(outfolder, exist_ok=True)
 
-        for idx, rxn in self.rxns.iterrows():
+        for idx, rxn in df.iterrows():
             frame = rxn["frame"]
             timestep = rxn["timestep"]
             rxnID = rxn["rxnID"]
@@ -546,44 +539,36 @@ class ReaxXtract:
 
 
     # find and count rings #
-    def count_rings(self, ring_limits:tuple=None):
-        if self.ring_limits is None:
-            self.ring_limits = (3, 10)
-        if ring_limits != None:
-            self.ring_limits = ring_limits
+    def find_loops(self, df:pd.core.frame.DataFrame=None, loop_limits:tuple[int,int]=None):
+        # use on self.rxns or another Pandas DataFrame if provided as argument
+        df = df or self.frames
 
-        print("Searching for ring structures with sizes:",self.ring_limits)
-        start = self.startidx
-        stop = self.stopidx
-        cf = self.checkframe
-        fs = self.stepframe
-        ts = self.ts
-
-        rl = self.ring_limits
-        if len(rl) > 0:
-            if len(rl) == 1 and rl[0] > 2:
-                rl = (3, rl[0])
-            elif len(rl) == 2:
-                if rl[0] > rl[1]: rl = (rl[1], rl[0])
+        ll = loop_limits or self.loop_limits
+        if len(ll) == 2:
+            if ll[1] > ll[0]: 
+                pass
+            if ll[0] > ll[1]: 
+                ll = (ll[1], ll[0])
             else:
-                print("ring count parameter ill defined")
-                return 0
+                log.error(f"loop limit parameter ill defined, should be tuple of two integers (min, max) with min < max or None, got {loop_limits}")
+                return
 
-            # open file for output
-            fring = open(self.basename + "_rc.dat", "w")
-            a = "# timestep"
-            b = " ".join(str(tmp) for tmp in list(range(rl[0], rl[1] + 1)))
-            c = "total_ring_count"
-            tmp = fring.write(" ".join([a, b, c, "\n"]))
-            num_cycles = [None] * len(list(range(start, len(ts), fs)))
-            for idx, frame in enumerate(range(start, len(ts), fs)):
-                cycle_lengths = [len(tmp) for tmp in nx.cycle_basis(self.nxg[frame])]
-                num_cycles[idx] = [cycle_lengths.count(i) for i in range(rl[0], rl[1])]
-                a = str(ts[frame])
-                b = " ".join([str(cycle_lengths.count(i)) for i in range(rl[0], rl[1])])
-                c = str(len(cycle_lengths))
-                tmp = fring.write(" ".join([a, b, c, "\n"]))
+        print("Searching for loop structures with sizes:",loop_limits)
+        
+        loops = pd.DataFrame(columns=["timestep","cycle_count","cycle_lengths","cycles"])
 
-            # close file
-            fring.close()
+        for idx, frame in df.iterrows():
+            ts = frame["timestep"]
+            nxg = frame["nxg"]
+
+            if loop_limits is None:
+                cycles = nx.cycle_basis(nxg)
+                cycle_lengths = [len(tmp) for tmp in cycles]
+            else:
+                cycles = [cycle for cycle in nx.cycle_basis(nxg,length_bound=ll[1]) if len(cycle)>=ll[0]]
+                cycles_lengths = [len(tmp) for tmp in cycles]
+            
+            cycle_count = [len(cycle_lengths)]
+            loops = pd.concat([loops, pd.DataFrame({"timestep":ts,"cycle_count":cycle_count,"cycle_lengths":cycle_lengths,"cycles":cycles})], ignore_index=True)
+        return loops
 # End of class
