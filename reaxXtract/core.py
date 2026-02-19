@@ -582,7 +582,7 @@ class ReaxXtract:
                 cycles = nx.cycle_basis(nxg)
                 cycle_lengths = [len(tmp) for tmp in cycles]
             else:
-                cycles = [cycle for cycle in nx.cycle_basis(nxg,length_bound=ll[1]) if len(cycle)>=ll[0]]
+                cycles = [cycle for cycle in nx.simple_cycles(nxg,length_bound=ll[1]) if len(cycle)>=ll[0]]
                 cycles_lengths = [len(tmp) for tmp in cycles]
             
             cycle_count = [len(cycle_lengths)]
