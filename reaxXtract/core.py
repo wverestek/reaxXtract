@@ -558,14 +558,14 @@ class ReaxXtract:
 
         ll = loop_limits or self.loop_limits
         if ll is not None and len(ll) == 2:
-            if ll[1] > ll[0]: 
-                pass
-            elif ll[1] is None and ll[0] is not None:
+            if ll[1] is None and ll[0] is not None:
                 ll = (ll[0], sys.maxint)
             elif ll[0] is None and ll[1] is not None:
                 ll = (0, ll[1])
             elif ll[0] > ll[1]: 
                 ll = (ll[1], ll[0])
+            elif ll[1] > ll[0]: 
+                pass
             else:
                 log.error(f"loop limit parameter ill defined, should be tuple of two integers (min, max) with min < max or None, got {loop_limits}")
                 return
