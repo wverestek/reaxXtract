@@ -1,6 +1,8 @@
 #from fileinput import filename
 from math import e
 import os, os.path
+
+from networkx.drawing import draw
 os.environ.setdefault("MPLBACKEND", "Agg")
 import sys, re
 import random
@@ -171,21 +173,6 @@ class ReaxXtract:
             self.frames = pd.concat([self.frames, 
                                      pd.DataFrame({"frame":frames_arr,"timestep": ts,"graph": nxg})],
                                     ignore_index=True)
-
-        # determine start and stop indices
-        ### necessary?
-        #if self.startstep in self.frames:
-        #    self.startidx = ts.index(self.startstep)
-        #else:
-        #    self.startidx = 0
-        #    log.warn(f"Warning: startstep {self.startstep} not found in timesteps, setting to first timestep {ts[self.startidx]}")    
-        #if self.stopidx > len(ts) - 1 or self.stopstep not in ts:
-        #    self.stopidx = len(ts) - 1
-        #    log.warn(f"Warning: stopstep {self.stopstep} not found in timesteps, setting to last timestep {ts[self.stopidx]}")
-        #else:
-        #    self.stopidx = ts.index(self.stopstep)
-
-
 
 
     ##################
@@ -386,16 +373,28 @@ class ReaxXtract:
     
     # renumber reactions and count unique reactions #
     def renumber_and_count_rxns(self, df:pd.core.frame.DataFrame=None):
-        # use on self.rxns or another Pandas DataFrame if provided as argument
-        df = df or self.rxns
+        """
+        Renumber reactions and count unique reactions based on their hashes in pandas DataFrame. 
+        This method updates two columns of the DataFrame: 'rxnID' and 'rxnCount'.
+        If df is None, operates on self.rxns and updates it in place. Otherwise, operates on the 
+        provided DataFrame and returns a new DataFrame with the updated columns.
+        """
+        # choose target DataFrame
+        df_in = self.rxns if df is None else df
+        # operate on a copy to avoid surprising in-place side effects for caller
+        df_work = df_in.copy()
 
-        if df.empty:
+        if df_work is None or df_work.empty:
             log.info("No reactions to renumber and count.")
             return
 
-        crxns = df["rxn_hash_before"].count() # total count of reactions
-        rxn_hashes = df["rxn_hash_before"] + [":"]*crxns + df["rxn_hash_after"]
-        hash2id = dict((v,k) for k,v in dict(enumerate(pd.unique(rxn_hashes))).items())       # array of unique rxn_hashes in order of appearance
+        # reset index to ensure consistent indexing for reaction ID assignment
+        df_work.reset_index(drop=True, inplace=True)
+
+        crxns = df_work["rxn_hash_before"].count() # total count of reactions
+        rxn_hashes = df_work["rxn_hash_before"] + [":"]*crxns + df_work["rxn_hash_after"]
+        id2hash = dict(enumerate(pd.unique(rxn_hashes))).items()    # unique rxn_hashes in order of appearance
+        hash2id = dict((v,k) for k,v in id2hash)                    # unique rxn_hashes in order of appearance
         nrxns = len(hash2id.keys())                                 # number of individual reactions
 
         rxn_id = np.array([None] * crxns)
@@ -407,56 +406,70 @@ class ReaxXtract:
             counter_arr[hash2id[h]] += 1
             rxn_count[idx] = counter_arr[hash2id[h]]
         
-        df["rxnID"] = rxn_id
-        df["rxnCount"] = rxn_count
+        df_in["rxnID"] = rxn_id
+        df_in["rxnCount"] = rxn_count
 
-        return df
+        if df is None:
+            self.rxns = df_work.copy()
+        else:
+            return df_work
         
 
     # remove reactions that reverse in stabilize frames #
     def remove_reversing_reactions(self,nframes:int=None,df:pd.core.frame.DataFrame=None):
-        # use on self.rxns or another Pandas DataFrame if provided as argument
-        df = df or self.rxns
+        """
+        Remove reactions that reverse within a certain number of frames (stabiframe) after their 
+        occurrence. Based on 'frame', 'rxn_hash_before' and 'rxn_hash_after' in pandas DataFrame.
+        Returns a tuple of two DataFrames: (filtered_reactions, removed_reactions) where:
+        - filtered_reactions: DataFrame with reactions that do not reverse within stabiframe frames.
+        - removed_reactions: DataFrame with reactions that reverse within stabiframe frames.
+        """
+        # choose target DataFrame
+        df_in = self.rxns if df is None else df
+        # operate on a copy to avoid surprising in-place side effects for caller
+        df_work = df_in.copy()
 
         self.stabiframe = nframes or self.stabiframe
 
         rmv_idx = []
-        for idx,row in self.rxns.iterrows():
+        for idx,row in df_work.iterrows():
             hash_before = row["rxn_hash_before"]
             hash_after = row["rxn_hash_after"]
             current_frame = row["frame"]
             max_frame = current_frame + self.stabiframe
             
-            mask_frame = df["frame"].gt(current_frame) & df["frame"].le(max_frame)
-            mask_hash = (df["rxn_hash_before"] == hash_after) & (df["rxn_hash_after"] == hash_before)
+            mask_frame = df_work["frame"].gt(current_frame) & df_work["frame"].le(max_frame)
+            mask_hash = (df_work["rxn_hash_before"] == hash_after) & (df_work["rxn_hash_after"] == hash_before)
             # list comparison: convert to tuple
             target_atoms = tuple(row["atoms_env"])
-            mask_atoms = df["atoms_env"].map(tuple) == target_atoms
+            mask_atoms = df_work["atoms_env"].map(tuple) == target_atoms
             mask = mask_frame & mask_hash & mask_atoms
             tmp = np.where(mask)[0]
-            if len(tmp) == 1:
+            if len(tmp) > 0:
                 rev_idx = tmp[0]
                 rmv_idx.append(idx)
                 rmv_idx.append(rev_idx)
         
         if len(rmv_idx) > 0:
             log.info(f"{len(rmv_idx)} Reaction(s) found that reverse within {self.stabiframe} frames, removing reactions")
-            #log.info(f"{df.iloc[rmv_idx]}")
-            #df_rmv = df.iloc[rmv_idx].copy()
-            df_rmv = df.drop(rmv_idx, inplace=True)
-            df.reset_index(drop=True, inplace=True)
+            df_rmv = df_work.drop(rmv_idx, inplace=True)
+            df_work = self.renumber_and_count_rxns(df_work)
+            df_rmv  = self.renumber_and_count_rxns(df_rmv)
             self.renumber_and_count_rxns()
         else:
+            df_work = self.renumber_and_count_rxns(df_work)
             df_rmv = None
-        
-        return df, df_rmv
+
+        return df_work, df_rmv
 
     # plot reactions #
     def plot_rxns(self, df:pd.core.frame.DataFrame=None, basename:str=None):
-        # use on self.rxns or another Pandas DataFrame if provided as argument
-        df = df or self.rxns
+        # choose target DataFrame (do not use `df or self.rxns` because pandas.DataFrame is not boolean)
+        df_in = self.rxns if df is None else df
+        # operate on a copy to avoid surprising in-place side effects for caller
+        df_work = df_in.copy()
 
-        if df.empty:
+        if df_work.empty:
             log.warn("No reactions found to plot.")
             return
 
@@ -544,7 +557,7 @@ class ReaxXtract:
         df = df or self.frames
 
         ll = loop_limits or self.loop_limits
-        if len(ll) == 2:
+        if ll is not None and len(ll) == 2:
             if ll[1] > ll[0]: 
                 pass
             if ll[0] > ll[1]: 
@@ -555,11 +568,11 @@ class ReaxXtract:
 
         print("Searching for loop structures with sizes:",loop_limits)
         
-        loops = pd.DataFrame(columns=["timestep","cycle_count","cycle_lengths","cycles"])
+        loops = pd.DataFrame(columns=["timestep","count","lengths","loops"])
 
         for idx, frame in df.iterrows():
             ts = frame["timestep"]
-            nxg = frame["nxg"]
+            nxg = frame["graph"]
 
             if loop_limits is None:
                 cycles = nx.cycle_basis(nxg)
@@ -569,6 +582,8 @@ class ReaxXtract:
                 cycles_lengths = [len(tmp) for tmp in cycles]
             
             cycle_count = [len(cycle_lengths)]
-            loops = pd.concat([loops, pd.DataFrame({"timestep":ts,"cycle_count":cycle_count,"cycle_lengths":cycle_lengths,"cycles":cycles})], ignore_index=True)
+            new_loops = pd.DataFrame(data={"timestep":ts,"count":cycle_count,"lengths":[cycle_lengths],"loops":[cycles]})
+            loops = pd.concat([loops, new_loops], ignore_index=True)
+        log.debug(f"loops found: {loops}")
         return loops
 # End of class
