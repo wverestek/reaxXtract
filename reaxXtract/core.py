@@ -559,7 +559,7 @@ class ReaxXtract:
         ll = loop_limits or self.loop_limits
         if ll is not None and len(ll) == 2:
             if ll[1] is None and ll[0] is not None:
-                ll = (ll[0], sys.maxint)
+                ll = (ll[0], sys.maxsize)
             elif ll[0] is None and ll[1] is not None:
                 ll = (0, ll[1])
             elif ll[0] > ll[1]: 
