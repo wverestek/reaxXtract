@@ -2,6 +2,7 @@
 from math import e
 import os, os.path
 
+from networkx.algorithms.operators import union
 from networkx.drawing import draw
 os.environ.setdefault("MPLBACKEND", "Agg")
 import sys, re
@@ -234,7 +235,7 @@ class ReaxXtract:
         
 
         start = 0 
-        stop =  self.frames["frame"].count() - self.stabiframe 
+        stop =  len(self.frames["frame"]) - self.stabiframe 
         cf = self.checkframe
         fs = self.stepframe
 
@@ -391,7 +392,7 @@ class ReaxXtract:
         # reset index to ensure consistent indexing for reaction ID assignment
         df_work.reset_index(drop=True, inplace=True)
 
-        crxns = df_work["rxn_hash_before"].count() # total count of reactions
+        crxns = len(df_work["rxn_hash_before"]) # total count of reactions
         rxn_hashes = df_work["rxn_hash_before"] + [":"]*crxns + df_work["rxn_hash_after"]
         id2hash = dict(enumerate(pd.unique(rxn_hashes))).items()    # unique rxn_hashes in order of appearance
         hash2id = dict((v,k) for k,v in id2hash)                    # unique rxn_hashes in order of appearance
@@ -416,7 +417,9 @@ class ReaxXtract:
         
 
     # remove reactions that reverse in stabilize frames #
-    def remove_reversing_reactions(self,nframes:int=None,df:pd.core.frame.DataFrame=None):
+    # filter_transient_reactions() ?
+    filter_transient_reactions = remove_reversing_reactions
+    def filter_transient_reactions(self,nframes:int=None,df:pd.core.frame.DataFrame=None):
         """
         Remove reactions that reverse within a certain number of frames (stabiframe) after their 
         occurrence. Based on 'frame', 'rxn_hash_before' and 'rxn_hash_after' in pandas DataFrame.
@@ -550,6 +553,53 @@ class ReaxXtract:
             plt.savefig(f_out,dpi=200)
             plt.close(fig)
 
+
+# remove_atoms #
+    def remove_atoms(self, df:pd.core.frame.DataFrame=None, target_atoms:tuple[int|str,...]=None) -> pd.core.frame.DataFrame:
+        # use self.frames or provided DataFrame if provided as argument
+        df_in = df if df is not None else self.frames
+        # copy DataFrame to avoid surprising in-place side effects for caller
+        df_work = df_in.copy()
+                
+        for idx, row in df_work.iterrows():
+            # real copy to avoid modifying the original graph in self.frames
+            nxg_copy = row["graph"].copy()
+
+            if target_atoms is None:
+                nodes = list(nxg_copy.nodes())
+            else:
+                nodes = [node for node, node_data in nxg_copy.nodes(data=True)
+                         if node_data.get('type') in target_atoms 
+                         or node_data.get('element') in target_atoms]
+
+            nxg_copy.remove_nodes_from(nodes)
+            
+            # update the graph in the DataFrame with the modified graph
+            df_work.at[idx, "graph"] = nxg_copy
+        
+        # return independent DataFrame with modified graphs
+        return df_work
+
+
+    # get degrees #
+    def get_degrees(self, df:pd.core.frame.DataFrame=None, target_atoms:tuple[int|str,...]=None ) -> list[list[int]]:
+        # use on self.rxns or another Pandas DataFrame if provided as argument
+        df_in = df or self.frames
+        df_work = df_in.copy()
+
+        degrees = [None]*len(df_work)
+        for idx, (df_idx, frame) in enumerate(df_work.iterrows()):
+            nxg = frame["graph"]
+
+            if target_atoms is None:
+                nodes = list(nxg.nodes())
+            else:
+                nodes = list(node for node, node_data in nxg.nodes(data=True)
+                                if node_data.get('type') in target_atoms 
+                                or node_data.get('element') in target_atoms)
+
+            degrees[idx] = list(d for n, d in nxg.degree(nodes))
+        return degrees
 
     # find and count rings #
     def find_loops(self, df:pd.core.frame.DataFrame=None, loop_limits:tuple[int,int]=None):
