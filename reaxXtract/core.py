@@ -254,7 +254,7 @@ class ReaxXtract:
             Gbefore = self.frames["graph"].iloc[idx-cf]
             Gafter = self.frames["graph"].iloc[idx]
 
-            log.info(f"evaluating frame: {idx} ({self.frames["frame"].iloc[idx]}) timestep: {self.frames['timestep'].iloc[idx]}")
+            log.info(f"evaluating frame: {idx} ({self.frames['frame'].iloc[idx]}) timestep: {self.frames['timestep'].iloc[idx]}")
             # find reacting atoms
             [edges_sets_before,edges_sets_after, reaction_sets] = self.find_reacting_atoms_for_two_frames(Gbefore, Gafter)   # list(set(int,),set(int,))
             log.debug(f"reaction_sets: {reaction_sets} with edges_before: {edges_sets_before} and edges_after: {edges_sets_after}")
@@ -406,8 +406,8 @@ class ReaxXtract:
             counter_arr[hash2id[h]] += 1
             rxn_count[idx] = counter_arr[hash2id[h]]
         
-        df_in["rxnID"] = rxn_id
-        df_in["rxnCount"] = rxn_count
+        df_work["rxnID"] = rxn_id
+        df_work["rxnCount"] = rxn_count
 
         if df is None:
             self.rxns = df_work.copy()
@@ -579,14 +579,15 @@ class ReaxXtract:
             nxg = frame["graph"]
 
             if loop_limits is None:
-                cycles = nx.cycle_basis(nxg)
-                cycle_lengths = [len(tmp) for tmp in cycles]
+                cycles = list(nx.simple_cycles(nxg))
+                cycles_length = [len(tmp) for tmp in cycles]
             else:
                 cycles = [cycle for cycle in nx.simple_cycles(nxg,length_bound=ll[1]) if len(cycle)>=ll[0]]
-                cycles_lengths = [len(tmp) for tmp in cycles]
+                cycles_length = [len(tmp) for tmp in cycles]
             
-            cycle_count = [len(cycle_lengths)]
-            new_loops = pd.DataFrame(data={"timestep":ts,"count":cycle_count,"lengths":[cycle_lengths],"loops":[cycles]})
+            cycle_count = [len(cycles_length)]
+            new_loops = pd.DataFrame(data={"timestep":ts,"count":cycle_count,"lengths":[cycles_length],"loops":[cycles]})
+            log.debug(f"frame {idx} timestep {ts} found loops: {new_loops}")
             loops = pd.concat([loops, new_loops], ignore_index=True)
         log.debug(f"loops found: {loops}")
         return loops
