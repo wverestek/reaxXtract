@@ -418,7 +418,7 @@ class ReaxXtract:
 
     # remove reactions that reverse in stabilize frames #
     # filter_transient_reactions() ?
-    filter_transient_reactions = remove_reversing_reactions
+    #filter_transient_reactions = remove_reversing_reactions
     def filter_transient_reactions(self,nframes:int=None,df:pd.core.frame.DataFrame=None):
         """
         Remove reactions that reverse within a certain number of frames (stabiframe) after their 
@@ -584,7 +584,7 @@ class ReaxXtract:
     # get degrees #
     def get_degrees(self, df:pd.core.frame.DataFrame=None, target_atoms:tuple[int|str,...]=None ) -> list[list[int]]:
         # use on self.rxns or another Pandas DataFrame if provided as argument
-        df_in = df or self.frames
+        df_in = df if df is not None else self.frames
         df_work = df_in.copy()
 
         degrees = [None]*len(df_work)
@@ -601,6 +601,66 @@ class ReaxXtract:
             degrees[idx] = list(d for n, d in nxg.degree(nodes))
         return degrees
 
+
+
+    def get_cycles(self, df: pd.DataFrame = None, min_size: int = 3, max_block_size: int = None):
+        """
+        Computes the Minimum Cycle Basis (MCB) for each frame in the trajectory.
+        This method identifies the Smallest Set of Smallest Rings (SSSR) by 
+        decomposing the graph into biconnected components. 
+
+        Args:
+            df (pd.DataFrame, optional): Input DataFrame containing 'graph' column. 
+                Defaults to self.backbone or self.frames.
+            min_size (int): Minimum number of nodes for a cycle to be included.
+            max_block_size (int, optional): Safety threshold. Blocks with more nodes 
+                than this will be skipped to avoid O(n^3) complexity stalls.
+
+        Returns:
+            list: A nested list [frames][cycles][node_ids].
+
+        Complexity Note:
+        The MCB algorithm is O(m^3 * n). For dense networks that 'gel' into a 
+        single large block, max_block_size is highly recommended to avoid 
+        computational stalls.
+        """
+        # Select data source
+        df_in = df if df is not None else getattr(self, 'backbone', self.frames)
+        all_frame_cycles = [None] * len(df_in)
+
+        for idx, (df_idx, frame) in enumerate(df_in.iterrows()):
+            nxg = frame["graph"]
+            frame_basis = []
+
+            # Use biconnected components to isolate cyclic parts of the network
+            for block_nodes in nx.biconnected_components(nxg):
+                block_len = len(block_nodes)
+            
+                if block_len < min_size:
+                    continue
+            
+                # Check safety limit for computational cost
+                if max_block_size and block_len > max_block_size:
+                    log.warning(
+                        f"Skipping large block ({block_len} nodes) in frame {idx}. "
+                        f"Increase max_block_size if this analysis is required."
+                    )
+                    continue
+                
+                subgraph = nxg.subgraph(block_nodes)
+            
+                # MCB calculation (the heavy lifting)
+                block_basis = nx.minimum_cycle_basis(subgraph)
+            
+                # Filter and store results
+                frame_basis.extend([c for c in block_basis if len(c) >= min_size])
+        
+            all_frame_cycles[idx] = frame_basis
+        
+        return all_frame_cycles
+
+    
+    
     # find and count rings #
     def find_loops(self, df:pd.core.frame.DataFrame=None, loop_limits:tuple[int,int]=None):
         # use on self.rxns or another Pandas DataFrame if provided as argument
