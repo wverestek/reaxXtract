@@ -603,7 +603,7 @@ class ReaxXtract:
 
 
 
-    def get_cycles(self, df: pd.DataFrame = None, min_size: int = 3, max_block_size: int = None):
+    def get_cycles(self, df: pd.DataFrame = None, min_size: int = 7, max_block_size: int = None):
         """
         Computes the Minimum Cycle Basis (MCB) for each frame in the trajectory.
         This method identifies the Smallest Set of Smallest Rings (SSSR) by 
