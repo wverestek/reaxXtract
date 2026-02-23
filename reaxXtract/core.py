@@ -604,80 +604,74 @@ class ReaxXtract:
         return degrees
 
 
+    def reduce_topology_by_pattern(self, template_node_ids:list|set, delete_node_ids:list|set, df:pd.core.frame.DataFrame=None, node_attr:str='type', pattern_from_frame:int=0):
+            """
+            Simplifies the graph by matching a template pattern and removing specific 
+            nodes. Handles molecular symmetry by filtering unique node sets.
+            """
+            from networkx.algorithms import isomorphism
 
-    def reduce_topology_by_pattern(self, template_node_ids:list|set, delete_node_ids:list|set, df:pd.core.frame.DataFrame=None,  node_attr:str='type', pattern_from_frame:int=0):
-        """
-        Simplifies the graph by matching a template pattern and removing specific 
-        nodes to reduce topological complexity.
-    
-        Args:
-            G (nx.Graph): The chemical graph.
-            template_node_ids (list): IDs of a sample structure to be used as a pattern.
-            delete_node_ids (list): IDs within the template that should be removed.
-            node_attr (str): The node attribute for matching (default: 'type').
-        """
-        from networkx.algorithms import isomorphism
-
-        # Check if all nodes to be deleted are part of the provided template
-        template_set = set(template_node_ids)
-        delete_set = set(delete_node_ids)
-        if not delete_set.issubset(template_set):
-            invalid_ids = list(delete_set - template_set)
-            log.error(f"Topology reduction failed: Nodes {invalid_ids} are in delete_node_ids "
-                      f"but not in template_node_ids. Check your input IDs!")
-            raise ValueError("Invalid delete_node_ids provided for pattern reduction.")
+            # 1. Sanity Check
+            template_set = set(template_node_ids)
+            delete_set = set(delete_node_ids)
+            if not delete_set.issubset(template_set):
+                invalid_ids = list(delete_set - template_set)
+                log.error(f"Nodes {invalid_ids} are not in template_node_ids!")
+                raise ValueError("Invalid delete_node_ids provided.")
         
+            df_work = df.copy(deep=True) if df is not None else self.frames.copy(deep=True)
+    
+            # 2. Create the template graph
+            template = df_work["graph"].iloc[pattern_from_frame].subgraph(template_node_ids).copy()
+            log.info(f"Starting topology reduction")
+            log.info(f"Template pattern nodes: {list(template.nodes())}")
+
+            nm = nx.isomorphism.categorical_node_match(node_attr, None)
+
+            for idx, (df_idx, frame) in enumerate(df_work.iterrows()):
+                nxg = frame["graph"]
+                ncomp_before = nx.number_connected_components(nxg)
+    
+                # 3. Setup the GraphMatcher
+                gm = nx.isomorphism.GraphMatcher(nxg, template, node_match=nm)
+    
+                # 4. Identify UNIQUE matches (Filtering Symmetries)
+                nodes_to_remove = set()
+                unique_molecule_footprints = set()
+    
+                for match in gm.subgraph_isomorphisms_iter():
+                    # match.keys() found pattern ID, match.values() corresponding template ID
+                    match_dict = dict(match)
+                    molecule_footprint = frozenset(match_dict.keys())
+                
+                    if molecule_footprint not in unique_molecule_footprints:
+                        unique_molecule_footprints.add(molecule_footprint)
+                        # add key (pattern id) if value (template id) is in delete_node_ids
+                        #nodes_to_remove.add([k for k,v in match_dict.items() if v in delete_node_ids])
+                        ## Nur für den ersten gefundenen Isomorphismus dieses Moleküls löschen
+                        inv_match = {v: k for k, v in match.items()}
+                        for d_id in delete_node_ids:
+                            if d_id in inv_match:
+                                nodes_to_remove.add(inv_match[d_id])
         
-        # use self.frames or provided DataFrame if provided as argument
-        df_in = df if df is not None else self.frames
-        # copy DataFrame to avoid surprising in-place side effects for caller
-        df_work = df_in.copy(deep=True)
-    
-        # 1. Create the template graph
-        template = df_work["graph"].iloc[pattern_from_frame].subgraph(template_node_ids).copy()
-        log.info(f"Starting topology reduction")
+                match_count = len(unique_molecule_footprints)
 
-        for idx, (df_idx, frame) in enumerate(df_work.iterrows()):
-            # nx graph
-            nxg = frame["graph"]
+                if match_count == 0:
+                    log.warning(f"Index {idx}: No matches found! Check atom types.")
+                    continue
 
-            # Store number of components before modification for Connectivity Check
-            ncomp_before = nx.number_connected_components(nxg)
-    
-            # 2. Setup the GraphMatcher
-            nm = isomorphism.categorical_node_match(node_attr, None)
-            gm = isomorphism.GraphMatcher(nxg, template, node_match=nm)
-    
-            # 3. Identify matches
-            nodes_to_remove = set()
-            match_count = 0
-    
-            for match in gm.subgraph_isomorphisms_iter():
-                match_count += 1
-                inv_match = {v: k for k, v in match.items()}
-                for d_id in delete_node_ids:
-                    if d_id in inv_match:
-                        nodes_to_remove.add(inv_match[d_id])
-        
-            # Early exit if no patterns were found
-            if match_count == 0:
-                log.warning(f"No matches found for the provided template! Check atom types or connectivity.")
-                continue
-
-            # 4. Global removal
-            initial_count = nxg.number_of_nodes()
-            nxg.remove_nodes_from(nodes_to_remove)
-            log.info(f"Index {idx}: Pattern found {match_count} times. Reduced nodes from {initial_count} to {nxg.number_of_nodes()}.")
-
-            # 5. Connectivity Check
-            ncomp_after = nx.number_connected_components(nxg)
-            if ncomp_after > ncomp_before:
-                log.warning(f"Index {idx}: Network is no longer fully connected! Fragments: {ncomp_after} vs. {ncomp_before}")
+                # 5. Global removal
+                initial_count = nxg.number_of_nodes()
+                nxg.remove_nodes_from(nodes_to_remove)
             
-            # df_work contains nxg in-place. Therefore assigning frame["graph"] is unnecessary
-            # frame["graph"] = nxg
+                # 6. Connectivity Check
+                ncomp_after = nx.number_connected_components(nxg)
+                log.info(f"Index {idx}: Pattern found {match_count} times. Reduced nodes from {initial_count} to {nxg.number_of_nodes()}.")
+
+                if ncomp_after > ncomp_before:
+                    log.warning(f"Index {idx}: Network is no longer fully connected! Fragments: {ncomp_before} vs. {ncomp_after}")
         
-        return df_work
+            return df_work
         
     def get_cycles(self, df: pd.DataFrame = None, min_size: int = 7, max_block_size: int = None):
         """
