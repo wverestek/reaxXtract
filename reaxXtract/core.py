@@ -288,42 +288,68 @@ class ReaxXtract:
     def find_reacting_atoms_for_two_frames(self,Gbefore:nx.Graph,Gafter:nx.Graph):
         # compare graphs, edges that are not in both graphs => reaction
         #reacting_edges = nx.symmetric_difference(Gbefore,Gafter).edges()
-        reacting_edges_before = nx.difference(Gbefore,Gafter).edges()
-        reacting_edges_after  = nx.difference(Gafter,Gbefore).edges()
-        reacting_edges = set(reacting_edges_before).union(set(reacting_edges_after))
+        all_edges_before = nx.difference(Gbefore,Gafter).edges()
+        all_edges_after  = nx.difference(Gafter,Gbefore).edges()
+        reacting_edges = set(all_edges_before).union(set(all_edges_after))
         log.debug(f"reacting_edges: {reacting_edges}")
         # atom IDs that are involved with changed bond connectivity
         # reacting_atoms = set(i for j in reacting_edges for i in j)          # set(int)
-        reacting_atoms = set(i for j in set(reacting_edges) for i in j)          # set(int)
+        reacting_atoms = set(i for j in set(reacting_edges) for i in j)       # set(int)
         log.debug(f"reacting_atoms: {reacting_atoms}")
+
+        # subgraph with reacting atoms and edges (before and after) 
+        # to find connected components as individual reactions
+        Gcombine = Gbefore.subgraph(reacting_atoms).copy()              # nx.Graph
+        Gcombine.add_edges_from(reacting_edges)                         # add reacting edges 
+        reacting_atoms_sets = list(nx.connected_components(Gcombine))   # list(set(int,),)
         
-        
+        nsets = len(reacting_atoms_sets)
         # reactions found
-        if len(reacting_atoms) > 0:
+        if nsets > 0:
+            
             # include atoms rxn_bond_cutoff bonds away
             if self.rxn_bond_cutoff > 0:
-                reacting_atoms1 = k_nearest_neighs(Gbefore,reacting_atoms,self.rxn_bond_cutoff)
-                reacting_atoms2 = k_nearest_neighs(Gafter ,reacting_atoms,self.rxn_bond_cutoff)  
-                reacting_atoms = reacting_atoms1.union(reacting_atoms2)     # combine sets
-            # group reacting atoms by connectivity to find individual        
-            # create small graph with reacting atoms and edges (before and after)
-            Gcombine = Gbefore.subgraph(reacting_atoms).copy()              # nx.Graph
-            Gcombine.add_edges_from(reacting_edges)                         # add reacting edges 
-            # group combined edges (before and after) by connectivity 
-            # reactions are distinguished by connected groups of edges
-            # list of sets, one set per found reaction
-            reacting_atoms_sets = list(nx.connected_components(Gcombine))   # list(set(int,),)
+                tmpsets = [None] * nsets
+                
+                # expand individual sets by rxn_bond_cutoff bonds
+                for i,iset in enumerate(reacting_atoms):
+                    reacting_atoms1 = k_nearest_neighs(Gbefore,iset,self.rxn_bond_cutoff)
+                    reacting_atoms2 = k_nearest_neighs(Gafter ,iset,self.rxn_bond_cutoff)  
+                    tmpsets[i] = reacting_atoms1.union(reacting_atoms2)     # combine sets
+
+                # merge sets that have common atoms after expansion
+                empty_sets = []
+                reacting_atoms_sets = [] * nsets
+                for i,iset in enumerate(tmpsets):
+                    for j in range(i+1, nsets):
+                        if len(iset.intersection(tmpsets[j])) > 0:
+                            reacting_atoms_sets[i] = iset.union(tmpsets[j])
+                            tmpsets[j]          = set() # mark for deletion
+                            reacting_atoms[j]   = set() # mark for deletion
+                            all_edges_before[j] = set() # mark for deletion
+                            all_edges_after[j]  = set() # mark for deletion
+                            empty_sets.append(j)
+
+                # remove sets that are marked for deletion
+                for i in range(len(reacting_atoms_sets)-1,-1,-1):
+                    if len(reacting_atoms_sets[i]) == 0: 
+                           del reacting_atoms_sets[i]
+                    
+            # no expansion, just use original sets of reacting atoms and edges
+            else:
+                pass
             log.debug(f"reacting_atoms_sets: {reacting_atoms_sets}")
 
-            # check for overlapping reaction cores in reaction sets
+            # construct edge sets for each reaction set
             reacting_edges_before_sets = list(set())
             reacting_edges_after_sets = list(set())
             for i,rset in enumerate(reacting_atoms_sets):
-                reacting_edges_before_sets.append([set(bond) for bond in reacting_edges_before if set(bond).issubset(rset)])
-                reacting_edges_after_sets.append( [set(bond) for bond in reacting_edges_after  if set(bond).issubset(rset)])
-            log.debug(f"reacting_edges_before {reacting_edges_before}")
-            log.debug(f"reacting_edges_after {reacting_edges_after}")
-            
+                reacting_edges_before_sets.append([set(bond) for bond in all_edges_before if set(bond).issubset(rset)])
+                reacting_edges_after_sets.append( [set(bond) for bond in all_edges_after  if set(bond).issubset(rset)])
+            log.debug(f"reacting_edges_before: {reacting_edges_before_sets}")
+            log.debug(f"reacting_edges_after: {reacting_edges_after_sets}")
+        
+        # no reactions found, return empty lists
         else:
             reacting_edges_before_sets = []
             reacting_edges_after_sets = []
