@@ -164,16 +164,21 @@ class ReaxXtract:
             # subsequent read
             # drop frames in case large files are read in multiple calls to avoid 
             # memory issues, but keep stabilize frames for reaction checking
-            maxframe_keep =  self.frames["frame"].iloc[-1] - self.stabiframe
-            idx = np.where(self.frames["frame"].lt(maxframe_keep))[0].tolist()
-            _ = self.frames.drop(index=idx, inplace=True)
-            # renumber new frames to continue from last frame + 1
-            maxframe_old = self.frames["frame"].max() if not self.frames.empty else -1
-            frames_arr = [i + maxframe_old + 1 for i in frames_arr]
+            nframes = len(self.frames["frame"])
+            if  nframes > 100 and nframes > self.stabiframe:
+                maxframe_keep =  self.frames["frame"].iloc[-1] - self.stabiframe
+                idx = np.where(self.frames["frame"].lt(maxframe_keep))[0].tolist()
+                _ = self.frames.drop(index=idx, inplace=True)
+                # renumber new frames to continue from last frame + 1
+                maxframe_old = self.frames["frame"].max() if not self.frames.empty else -1
+                frames_arr = [i + maxframe_old + 1 for i in frames_arr]
             # concatenate new frames to existing frames DataFrame
             self.frames = pd.concat([self.frames, 
                                      pd.DataFrame({"frame":frames_arr,"timestep": ts,"graph": nxg})],
                                     ignore_index=True)
+        # check timesteps are monotonic increasing
+        if not self.frames["timestep"].is_monotonic_increasing:
+            log.warning(f"READER: Timesteps are not monotonic increasing!!!")
 
 
     ##################
@@ -226,6 +231,10 @@ class ReaxXtract:
         if self.frames.empty:
             log.info(f"No bond data read yet, reading now... {self.infile}")
             self.read()
+        
+        # check for ascending timesteps
+        if not self.frames["timestep"].is_monotonic_increasing:
+            log.warning(f"Timesteps are not monotonic increasing!!!")
 
         log.info("Searching reactions...")
         f_rxn:TextIO = open(self.basename + "_rxnIDs.dat", "wt")
@@ -284,24 +293,24 @@ class ReaxXtract:
         self.renumber_and_count_rxns()
 
 
+
     # find reacting atoms for two frames #
     def find_reacting_atoms_for_two_frames(self,Gbefore:nx.Graph,Gafter:nx.Graph):
         # compare graphs, edges that are not in both graphs => reaction
         #reacting_edges = nx.symmetric_difference(Gbefore,Gafter).edges()
         all_edges_before = nx.difference(Gbefore,Gafter).edges()
         all_edges_after  = nx.difference(Gafter,Gbefore).edges()
-        reacting_edges = set(all_edges_before).union(set(all_edges_after))
-        log.debug(f"reacting_edges: {reacting_edges}")
+        all_reacting_edges = set(all_edges_before).union(set(all_edges_after))
+        log.debug(f"all_reacting_edges: {all_reacting_edges}")
         # atom IDs that are involved with changed bond connectivity
-        # reacting_atoms = set(i for j in reacting_edges for i in j)          # set(int)
-        reacting_atoms = set(i for j in set(reacting_edges) for i in j)       # set(int)
-        log.debug(f"reacting_atoms: {reacting_atoms}")
+        all_reacting_atoms = set(i for j in set(all_reacting_edges) for i in j)       # set(int,)
+        log.debug(f"all_reacting_atoms: {all_reacting_atoms}")
 
         # subgraph with reacting atoms and edges (before and after) 
         # to find connected components as individual reactions
-        Gcombine = Gbefore.subgraph(reacting_atoms).copy()              # nx.Graph
-        Gcombine.add_edges_from(reacting_edges)                         # add reacting edges 
-        reacting_atoms_sets = list(nx.connected_components(Gcombine))   # list(set(int,),)
+        Gcombine = Gbefore.subgraph(all_reacting_atoms).copy()              # nx.Graph
+        Gcombine.add_edges_from(all_reacting_edges)                         # nx.Graph, add reacting edges 
+        reacting_atoms_sets = list(nx.connected_components(Gcombine))       # list(set(int,),)
         
         nsets = len(reacting_atoms_sets)
         # reactions found
@@ -309,31 +318,34 @@ class ReaxXtract:
             
             # include atoms rxn_bond_cutoff bonds away
             if self.rxn_bond_cutoff > 0:
-                tmpsets = [None] * nsets
                 
                 # expand individual sets by rxn_bond_cutoff bonds
-                for i,iset in enumerate(reacting_atoms):
+                log.debug(f"reacting_atoms_sets before expansion: {reacting_atoms_sets}")
+                tmpsets = []
+                for i,iset in enumerate(reacting_atoms_sets):
                     reacting_atoms1 = k_nearest_neighs(Gbefore,iset,self.rxn_bond_cutoff)
                     reacting_atoms2 = k_nearest_neighs(Gafter ,iset,self.rxn_bond_cutoff)  
-                    tmpsets[i] = reacting_atoms1.union(reacting_atoms2)     # combine sets
+                    #tmpsets[i] = reacting_atoms1.union(reacting_atoms2)     # combine sets
+                    tmpsets.append(reacting_atoms1.union(reacting_atoms2))    # combine sets
+                log.debug(f"reacting_atoms_sets after expansion: {tmpsets}")
 
-                # merge sets that have common atoms after expansion
-                empty_sets = []
-                reacting_atoms_sets = [] * nsets
-                for i,iset in enumerate(tmpsets):
-                    for j in range(i+1, nsets):
-                        if len(iset.intersection(tmpsets[j])) > 0:
-                            reacting_atoms_sets[i] = iset.union(tmpsets[j])
-                            tmpsets[j]          = set() # mark for deletion
-                            reacting_atoms[j]   = set() # mark for deletion
-                            all_edges_before[j] = set() # mark for deletion
-                            all_edges_after[j]  = set() # mark for deletion
-                            empty_sets.append(j)
+                # more than one set, check if sets have common atoms after expansion
+                # and merge if necessary, otherwise just use the expanded sets as reaction sets
+                if len(tmpsets) > 1:
+                    log.debug(f"Merging:")
+                    reacting_atoms_sets = []
+                    # merge sets that have common atoms after expansion
+                    log.debug(f"reacting_atoms_sets before merging: {reacting_atoms_sets}")
+                    for i,iset in enumerate(tmpsets):
+                        for j in range(i+1, nsets):
+                            if len(iset.intersection(tmpsets[j])) > 0:
+                                reacting_atoms_sets.append(iset.union(tmpsets[j]))
+                                tmpsets[j]          = set() # mark for deletion
+                    log.debug(f"reacting_atoms_sets after merging: {reacting_atoms_sets}")
 
-                # remove sets that are marked for deletion
-                for i in range(len(reacting_atoms_sets)-1,-1,-1):
-                    if len(reacting_atoms_sets[i]) == 0: 
-                           del reacting_atoms_sets[i]
+                else:
+                    # only one set, just use the expanded set
+                    reacting_atoms_sets = tmpsets
                     
             # no expansion, just use original sets of reacting atoms and edges
             else:
