@@ -314,9 +314,11 @@ class ReaxXtract:
             # include atoms rxn_bond_cutoff bonds away
             if self.rxn_bond_cutoff > 0:
                 
+                tmpsets = []
+                reacting_atoms_sets = []
+
                 # expand individual sets by rxn_bond_cutoff bonds
                 log.debug(f"reacting_atoms_sets before expansion: {reacting_atoms_core_sets}")
-                tmpsets = []
                 for i,iset in enumerate(reacting_atoms_core_sets):
                     reacting_atoms1 = k_nearest_neighs(Gbefore,iset,self.rxn_bond_cutoff)
                     reacting_atoms2 = k_nearest_neighs(Gafter ,iset,self.rxn_bond_cutoff)  
@@ -326,10 +328,8 @@ class ReaxXtract:
                 # more than one set, check if sets have common atoms after expansion
                 # and merge if necessary, otherwise just use the expanded sets as reaction sets
                 if len(tmpsets) > 1:
-                    log.debug(f"Merging:")
-                    reacting_atoms_sets = []
                     # merge sets that have common atoms after expansion
-                    log.debug(f"reacting_atoms_sets before merging: {reacting_atoms_core_sets}")
+                    log.debug(f"Merging: reacting_atoms_sets before merging: {reacting_atoms_core_sets}")
                     for i,iset in enumerate(tmpsets):
                         for j in range(i+1, nsets):
                             inter_atoms = iset.intersection(reacting_atoms_core_sets[j])
@@ -337,8 +337,8 @@ class ReaxXtract:
                                 print(f"Merging sets {iset} and {tmpsets[j]} with common atoms {inter_atoms}")
                                 reacting_atoms_sets.append(iset.union(tmpsets[j]))
                                 #reacting_atoms_core_sets[j] = set()                     # remove from further consideration
-                                #tmpsets[j] = set()                                      # remove from further consideration
-                    log.debug(f"reacting_atoms_sets after merging: {reacting_atoms_sets}")
+                                tmpsets[j] = set()                                      # remove from further consideration
+                    log.debug(f"Merged: reacting_atoms_sets after merging:   {reacting_atoms_sets}")
 
                 else:
                     # only one set, just use the expanded set
@@ -589,7 +589,7 @@ def remove_atoms_by_pattern(df:pd.core.frame.DataFrame, template_node_ids:list|s
 
 
 # plot reactions #
-def plot_rxns(df:pd.core.frame.DataFrame, basename:str="reaxXtract") -> None:
+def plot_rxns(df:pd.core.frame.DataFrame, basename:str="reaxXtract", outformat:str="pdf") -> None:
     # check if DataFrame is empty
     if df.empty:
         log.warn("No reactions found to plot.")
@@ -665,10 +665,22 @@ def plot_rxns(df:pd.core.frame.DataFrame, basename:str="reaxXtract") -> None:
                 with_labels=True, labels=node_labels, font_size=6,
                 node_size=300, edge_color="black", width=bo)
         plt.tight_layout()
+        
+        if outformat == "png":
+            fileout = f"{basename}_timestep{timestep}_rxnType{rxnID}_rxnCount{rxnCount}.png"
+            f_out = os.path.join(outfolder, fileout)
+            plt.savefig(f_out,dpi=200)
+        elif outformat == "pdf":
+            fileout = f"{basename}_timestep{timestep}_rxnType{rxnID}_rxnCount{rxnCount}.pdf"
+            f_out = os.path.join(outfolder, fileout)
+            plt.savefig(f_out,format="pdf")
+        else:
+            log.warning(f"Unsupported output format {outformat}, defaulting to PDF")
+            fileout = f"{basename}_timestep{timestep}_rxnType{rxnID}_rxnCount{rxnCount}.pdf"
+            f_out = os.path.join(outfolder, fileout)
+            plt.savefig(f_out,format="pdf")
+
         fig = plt.gcf()
-        fileout = f"{basename}_timestep{timestep}_rxnType{rxnID}_rxnCount{rxnCount}.png"
-        f_out = os.path.join(outfolder, fileout)
-        plt.savefig(f_out,dpi=200)
         plt.close(fig)
 
 ## analyze topology ##
