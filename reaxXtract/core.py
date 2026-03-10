@@ -408,103 +408,199 @@ class ReaxXtract:
                              "Gbefore":Gbefore,"Gafter":Gafter,
                              "rxn_hash_before":hash_before,"rxn_hash_after":hash_after})
         return pd.DataFrame(tmp_list)
+    # End of class
 
+## work on reactions and topology ##
+# renumber reactions and count unique reactions #
+def renumber_and_count_rxns(self, df:pd.core.frame.DataFrame=None) -> pd.core.frame.DataFrame:
+    """
+    Renumber reactions and count unique reactions based on their hashes in pandas DataFrame. 
+    This method updates two columns of the DataFrame: 'rxnID' and 'rxnCount'.
+    If df is None, operates on self.rxns and updates it in place. Otherwise, operates on the 
+    provided DataFrame and returns a new DataFrame with the updated columns.
+    """
+    # choose target DataFrame
+    df_in = self.rxns if df is None else df
+    # operate on a copy to avoid surprising in-place side effects for caller
+    df_work = df_in.copy()
+
+    if df_work is None or df_work.empty:
+        log.info("No reactions to renumber and count.")
+        return
+
+    # reset index to ensure consistent indexing for reaction ID assignment
+    df_work.reset_index(drop=True, inplace=True)
+
+    crxns = len(df_work["rxn_hash_before"]) # total count of reactions
+    rxn_hashes = df_work["rxn_hash_before"] + [":"]*crxns + df_work["rxn_hash_after"]
+    id2hash = dict(enumerate(pd.unique(rxn_hashes))).items()    # unique rxn_hashes in order of appearance
+    hash2id = dict((v,k) for k,v in id2hash)                    # unique rxn_hashes in order of appearance
+    nrxns = len(hash2id.keys())                                 # number of individual reactions
+
+    rxn_id = np.array([None] * crxns)
+    rxn_count = np.array([0] * crxns)
+    counter_arr = np.array([0] * nrxns)
+
+    for idx, h in enumerate(rxn_hashes):
+        rxn_id[idx] = hash2id[h]
+        counter_arr[hash2id[h]] += 1
+        rxn_count[idx] = counter_arr[hash2id[h]]
     
-    # renumber reactions and count unique reactions #
-    def renumber_and_count_rxns(self, df:pd.core.frame.DataFrame=None):
-        """
-        Renumber reactions and count unique reactions based on their hashes in pandas DataFrame. 
-        This method updates two columns of the DataFrame: 'rxnID' and 'rxnCount'.
-        If df is None, operates on self.rxns and updates it in place. Otherwise, operates on the 
-        provided DataFrame and returns a new DataFrame with the updated columns.
-        """
-        # choose target DataFrame
-        df_in = self.rxns if df is None else df
-        # operate on a copy to avoid surprising in-place side effects for caller
-        df_work = df_in.copy()
+    df_work["rxnID"] = rxn_id
+    df_work["rxnCount"] = rxn_count
 
-        if df_work is None or df_work.empty:
-            log.info("No reactions to renumber and count.")
-            return
+    return df_work
 
-        # reset index to ensure consistent indexing for reaction ID assignment
-        df_work.reset_index(drop=True, inplace=True)
 
-        crxns = len(df_work["rxn_hash_before"]) # total count of reactions
-        rxn_hashes = df_work["rxn_hash_before"] + [":"]*crxns + df_work["rxn_hash_after"]
-        id2hash = dict(enumerate(pd.unique(rxn_hashes))).items()    # unique rxn_hashes in order of appearance
-        hash2id = dict((v,k) for k,v in id2hash)                    # unique rxn_hashes in order of appearance
-        nrxns = len(hash2id.keys())                                 # number of individual reactions
+# remove reactions that reverse in stabilize frames #
+def filter_transient_reactions(self,nframes:int=None,df:pd.core.frame.DataFrame=None) -> pd.core.frame.DataFrame:
+    """
+    Remove reactions that reverse within a certain number of frames (stabiframe) after their 
+    occurrence. Based on 'frame', 'rxn_hash_before' and 'rxn_hash_after' in pandas DataFrame.
+    Returns a tuple of two DataFrames: (filtered_reactions, removed_reactions) where:
+    - filtered_reactions: DataFrame with reactions that do not reverse within stabiframe frames.
+    - removed_reactions: DataFrame with reactions that reverse within stabiframe frames.
+    """
+    # choose target DataFrame
+    df_in = self.rxns if df is None else df
+    # operate on a copy to avoid surprising in-place side effects for caller
+    df_work = df_in.copy()
 
-        rxn_id = np.array([None] * crxns)
-        rxn_count = np.array([0] * crxns)
-        counter_arr = np.array([0] * nrxns)
+    self.stabiframe = nframes or self.stabiframe
 
-        for idx, h in enumerate(rxn_hashes):
-            rxn_id[idx] = hash2id[h]
-            counter_arr[hash2id[h]] += 1
-            rxn_count[idx] = counter_arr[hash2id[h]]
+    rmv_idx = []
+    for idx,row in df_work.iterrows():
+        hash_before = row["rxn_hash_before"]
+        hash_after = row["rxn_hash_after"]
+        current_frame = row["frame"]
+        max_frame = current_frame + self.stabiframe
         
-        df_work["rxnID"] = rxn_id
-        df_work["rxnCount"] = rxn_count
+        mask_frame = df_work["frame"].gt(current_frame) & df_work["frame"].le(max_frame)
+        mask_hash = (df_work["rxn_hash_before"] == hash_after) & (df_work["rxn_hash_after"] == hash_before)
+        # list comparison: convert to tuple
+        target_atoms = tuple(row["atoms_env"])
+        mask_atoms = df_work["atoms_env"].map(tuple) == target_atoms
+        mask = mask_frame & mask_hash & mask_atoms
+        tmp = np.where(mask)[0]
+        if len(tmp) > 0:
+            rev_idx = tmp[0]
+            rmv_idx.append(idx)
+            rmv_idx.append(rev_idx)
+    
+    if len(rmv_idx) > 0:
+        log.info(f"{len(rmv_idx)} Reaction(s) found that reverse within {self.stabiframe} frames, removing reactions")
+        df_rmv = df_work.drop(rmv_idx, inplace=True)
+        df_work = self.renumber_and_count_rxns(df_work)
+        df_rmv  = self.renumber_and_count_rxns(df_rmv)
+        self.renumber_and_count_rxns()
+    else:
+        df_work = self.renumber_and_count_rxns(df_work)
+        df_rmv = None
 
-        if df is None:
-            self.rxns = df_work.copy()
-        else:
-            return df_work
-        
+    return df_work, df_rmv
 
-    # remove reactions that reverse in stabilize frames #
-    # filter_transient_reactions() ?
-    #filter_transient_reactions = remove_reversing_reactions
-    def filter_transient_reactions(self,nframes:int=None,df:pd.core.frame.DataFrame=None):
-        """
-        Remove reactions that reverse within a certain number of frames (stabiframe) after their 
-        occurrence. Based on 'frame', 'rxn_hash_before' and 'rxn_hash_after' in pandas DataFrame.
-        Returns a tuple of two DataFrames: (filtered_reactions, removed_reactions) where:
-        - filtered_reactions: DataFrame with reactions that do not reverse within stabiframe frames.
-        - removed_reactions: DataFrame with reactions that reverse within stabiframe frames.
-        """
-        # choose target DataFrame
-        df_in = self.rxns if df is None else df
-        # operate on a copy to avoid surprising in-place side effects for caller
-        df_work = df_in.copy()
 
-        self.stabiframe = nframes or self.stabiframe
-
-        rmv_idx = []
-        for idx,row in df_work.iterrows():
-            hash_before = row["rxn_hash_before"]
-            hash_after = row["rxn_hash_after"]
-            current_frame = row["frame"]
-            max_frame = current_frame + self.stabiframe
+# remove_atoms #
+def remove_atoms_by_type(self, df:pd.core.frame.DataFrame=None, target_atoms:tuple[int|str,...]=None) -> pd.core.frame.DataFrame:
+    # use self.frames or provided DataFrame if provided as argument
+    df_in = df if df is not None else self.frames
+    # copy DataFrame to avoid surprising in-place side effects for caller
+    df_work = df_in.copy(deep=True)
             
-            mask_frame = df_work["frame"].gt(current_frame) & df_work["frame"].le(max_frame)
-            mask_hash = (df_work["rxn_hash_before"] == hash_after) & (df_work["rxn_hash_after"] == hash_before)
-            # list comparison: convert to tuple
-            target_atoms = tuple(row["atoms_env"])
-            mask_atoms = df_work["atoms_env"].map(tuple) == target_atoms
-            mask = mask_frame & mask_hash & mask_atoms
-            tmp = np.where(mask)[0]
-            if len(tmp) > 0:
-                rev_idx = tmp[0]
-                rmv_idx.append(idx)
-                rmv_idx.append(rev_idx)
-        
-        if len(rmv_idx) > 0:
-            log.info(f"{len(rmv_idx)} Reaction(s) found that reverse within {self.stabiframe} frames, removing reactions")
-            df_rmv = df_work.drop(rmv_idx, inplace=True)
-            df_work = self.renumber_and_count_rxns(df_work)
-            df_rmv  = self.renumber_and_count_rxns(df_rmv)
-            self.renumber_and_count_rxns()
+    for idx, row in df_work.iterrows():
+        # real copy to avoid modifying the original graph in self.frames
+        nxg = row["graph"]
+
+        if target_atoms is None:
+            nodes = list(nxg.nodes())
         else:
-            df_work = self.renumber_and_count_rxns(df_work)
-            df_rmv = None
+            nodes = [node for node, node_data in nxg.nodes(data=True)
+                     if node_data.get('type') in target_atoms 
+                     or node_data.get('element') in target_atoms]
 
-        return df_work, df_rmv
+        nxg.remove_nodes_from(nodes)
+        
+        # update the graph in the DataFrame with the modified graph
+        # should be unnecessary since we are modifying the graph in place, but to be explicit:
+        df_work.at[idx, "graph"] = nxg
+    
+    # return independent DataFrame with modified graphs
+    return df_work
 
-    # plot reactions #
-    def plot_rxns(self, df:pd.core.frame.DataFrame=None, basename:str=None):
+
+# remove atoms by somorph search of subgraph #
+def remove_atoms_by_pattern(self, template_node_ids:list|set, delete_node_ids:list|set, df:pd.core.frame.DataFrame=None, node_attr:str='type', pattern_from_frame:int=0) -> pd.core.frame.DataFrame:
+    """
+    Simplifies the graph by matching a template pattern and removing specific 
+    nodes. Handles molecular symmetry by filtering unique node sets.
+    """
+    from networkx.algorithms import isomorphism
+
+    # 1. Sanity Check
+    template_set = set(template_node_ids)
+    delete_set = set(delete_node_ids)
+    if not delete_set.issubset(template_set):
+        invalid_ids = list(delete_set - template_set)
+        log.error(f"Nodes {invalid_ids} are not in template_node_ids!")
+        raise ValueError("Invalid delete_node_ids provided.")
+    
+    df_work = df.copy(deep=True) if df is not None else self.frames.copy(deep=True)
+
+    # 2. Create the template graph
+    template = df_work["graph"].iloc[pattern_from_frame].subgraph(template_node_ids).copy()
+    log.info(f"Starting topology reduction")
+    log.info(f"Template pattern nodes: {list(template.nodes())}")
+
+    nm = nx.isomorphism.categorical_node_match(node_attr, None)
+
+    for idx, (df_idx, frame) in enumerate(df_work.iterrows()):
+        nxg = frame["graph"]
+        ncomp_before = nx.number_connected_components(nxg)
+
+        # 3. Setup the GraphMatcher
+        gm = nx.isomorphism.GraphMatcher(nxg, template, node_match=nm)
+
+        # 4. Identify UNIQUE matches (Filtering Symmetries)
+        nodes_to_remove = set()
+        unique_molecule_footprints = set()
+
+        for match in gm.subgraph_isomorphisms_iter():
+            # match.keys() found pattern ID, match.values() corresponding template ID
+            match_dict = dict(match)
+            molecule_footprint = frozenset(match_dict.keys())
+        
+            if molecule_footprint not in unique_molecule_footprints:
+                unique_molecule_footprints.add(molecule_footprint)
+                # add key (pattern id) if value (template id) is in delete_node_ids
+                #nodes_to_remove.add([k for k,v in match_dict.items() if v in delete_node_ids])
+                ## Nur für den ersten gefundenen Isomorphismus dieses Moleküls löschen
+                inv_match = {v: k for k, v in match.items()}
+                for d_id in delete_node_ids:
+                    if d_id in inv_match:
+                        nodes_to_remove.add(inv_match[d_id])
+    
+        match_count = len(unique_molecule_footprints)
+
+        if match_count == 0:
+            log.warning(f"Index {idx}: No matches found! Check atom types.")
+            continue
+
+        # 5. Global removal
+        initial_count = nxg.number_of_nodes()
+        nxg.remove_nodes_from(nodes_to_remove)
+    
+        # 6. Connectivity Check
+        ncomp_after = nx.number_connected_components(nxg)
+        log.info(f"Index {idx}: Pattern found {match_count} times. Reduced nodes from {initial_count} to {nxg.number_of_nodes()}.")
+
+        if ncomp_after > ncomp_before:
+            log.warning(f"Index {idx}: Network is no longer fully connected! Fragments: {ncomp_before} vs. {ncomp_after}")
+    
+    return df_work
+
+
+# plot reactions #
+def plot_rxns(self, df:pd.core.frame.DataFrame=None, basename:str=None) -> None:
         # choose target DataFrame (do not use `df or self.rxns` because pandas.DataFrame is not boolean)
         df_in = self.rxns if df is None else df
         # operate on a copy to avoid surprising in-place side effects for caller
@@ -591,38 +687,9 @@ class ReaxXtract:
             plt.savefig(f_out,dpi=200)
             plt.close(fig)
 
-
-# remove_atoms #
-    def remove_atoms_by_type(self, df:pd.core.frame.DataFrame=None, target_atoms:tuple[int|str,...]=None) -> pd.core.frame.DataFrame:
-        # use self.frames or provided DataFrame if provided as argument
-        df_in = df if df is not None else self.frames
-        # copy DataFrame to avoid surprising in-place side effects for caller
-        df_work = df_in.copy(deep=True)
-                
-        for idx, row in df_work.iterrows():
-            # real copy to avoid modifying the original graph in self.frames
-            nxg = row["graph"]
-
-            if target_atoms is None:
-                nodes = list(nxg.nodes())
-            else:
-                nodes = [node for node, node_data in nxg.nodes(data=True)
-                         if node_data.get('type') in target_atoms 
-                         or node_data.get('element') in target_atoms]
-
-            nxg.remove_nodes_from(nodes)
-            
-            # update the graph in the DataFrame with the modified graph
-            # should be unnecessary since we are modifying the graph in place, but to be explicit:
-            df_work.at[idx, "graph"] = nxg
-        
-        # return independent DataFrame with modified graphs
-        return df_work
-
-
-
-    # get degrees #
-    def get_degrees(self, df:pd.core.frame.DataFrame=None, target_atoms:tuple[int|str,...]=None ) -> list[list[int]]:
+## analyze topology ##
+# get degrees #
+def get_degrees(self, df:pd.core.frame.DataFrame=None, target_atoms:tuple[int|str,...]=None ) -> list[list[int]]:
         # use on self.rxns or another Pandas DataFrame if provided as argument
         df_in = df if df is not None else self.frames
         df_work = df_in.copy()
@@ -641,77 +708,8 @@ class ReaxXtract:
             degrees[idx] = list(d for n, d in nxg.degree(nodes))
         return degrees
 
-
-    def reduce_topology_by_pattern(self, template_node_ids:list|set, delete_node_ids:list|set, df:pd.core.frame.DataFrame=None, node_attr:str='type', pattern_from_frame:int=0):
-            """
-            Simplifies the graph by matching a template pattern and removing specific 
-            nodes. Handles molecular symmetry by filtering unique node sets.
-            """
-            from networkx.algorithms import isomorphism
-
-            # 1. Sanity Check
-            template_set = set(template_node_ids)
-            delete_set = set(delete_node_ids)
-            if not delete_set.issubset(template_set):
-                invalid_ids = list(delete_set - template_set)
-                log.error(f"Nodes {invalid_ids} are not in template_node_ids!")
-                raise ValueError("Invalid delete_node_ids provided.")
-        
-            df_work = df.copy(deep=True) if df is not None else self.frames.copy(deep=True)
     
-            # 2. Create the template graph
-            template = df_work["graph"].iloc[pattern_from_frame].subgraph(template_node_ids).copy()
-            log.info(f"Starting topology reduction")
-            log.info(f"Template pattern nodes: {list(template.nodes())}")
-
-            nm = nx.isomorphism.categorical_node_match(node_attr, None)
-
-            for idx, (df_idx, frame) in enumerate(df_work.iterrows()):
-                nxg = frame["graph"]
-                ncomp_before = nx.number_connected_components(nxg)
-    
-                # 3. Setup the GraphMatcher
-                gm = nx.isomorphism.GraphMatcher(nxg, template, node_match=nm)
-    
-                # 4. Identify UNIQUE matches (Filtering Symmetries)
-                nodes_to_remove = set()
-                unique_molecule_footprints = set()
-    
-                for match in gm.subgraph_isomorphisms_iter():
-                    # match.keys() found pattern ID, match.values() corresponding template ID
-                    match_dict = dict(match)
-                    molecule_footprint = frozenset(match_dict.keys())
-                
-                    if molecule_footprint not in unique_molecule_footprints:
-                        unique_molecule_footprints.add(molecule_footprint)
-                        # add key (pattern id) if value (template id) is in delete_node_ids
-                        #nodes_to_remove.add([k for k,v in match_dict.items() if v in delete_node_ids])
-                        ## Nur für den ersten gefundenen Isomorphismus dieses Moleküls löschen
-                        inv_match = {v: k for k, v in match.items()}
-                        for d_id in delete_node_ids:
-                            if d_id in inv_match:
-                                nodes_to_remove.add(inv_match[d_id])
-        
-                match_count = len(unique_molecule_footprints)
-
-                if match_count == 0:
-                    log.warning(f"Index {idx}: No matches found! Check atom types.")
-                    continue
-
-                # 5. Global removal
-                initial_count = nxg.number_of_nodes()
-                nxg.remove_nodes_from(nodes_to_remove)
-            
-                # 6. Connectivity Check
-                ncomp_after = nx.number_connected_components(nxg)
-                log.info(f"Index {idx}: Pattern found {match_count} times. Reduced nodes from {initial_count} to {nxg.number_of_nodes()}.")
-
-                if ncomp_after > ncomp_before:
-                    log.warning(f"Index {idx}: Network is no longer fully connected! Fragments: {ncomp_before} vs. {ncomp_after}")
-        
-            return df_work
-        
-    def get_cycles(self, df: pd.DataFrame = None, min_size: int = 7, max_block_size: int = None):
+def find_minimum_cycle_basis(self, df: pd.DataFrame = None, min_size: int = 7, max_block_size: int = None) -> list[list[int]]:
         """
         Computes the Minimum Cycle Basis (MCB) for each frame in the trajectory.
         This method identifies the Smallest Set of Smallest Rings (SSSR) by 
@@ -767,46 +765,3 @@ class ReaxXtract:
         
         return all_frame_cycles
 
-    
-    
-    # find and count rings #
-    def find_loops(self, df:pd.core.frame.DataFrame=None, loop_limits:tuple[int,int]=None):
-        # use on self.rxns or another Pandas DataFrame if provided as argument
-        df = df or self.frames
-
-        ll = loop_limits or self.loop_limits
-        if ll is not None and len(ll) == 2:
-            if ll[1] is None and ll[0] is not None:
-                ll = (ll[0], sys.maxsize)
-            elif ll[0] is None and ll[1] is not None:
-                ll = (0, ll[1])
-            elif ll[0] > ll[1]: 
-                ll = (ll[1], ll[0])
-            elif ll[1] > ll[0]: 
-                pass
-            else:
-                log.error(f"loop limit parameter ill defined, should be tuple of two integers (min, max) with min < max or None, got {loop_limits}")
-                return
-
-        print("Searching for loop structures with sizes:",loop_limits)
-        
-        loops = pd.DataFrame(columns=["timestep","count","lengths","loops"])
-
-        for idx, frame in df.iterrows():
-            ts = frame["timestep"]
-            nxg = frame["graph"]
-
-            if loop_limits is None:
-                cycles = list(nx.simple_cycles(nxg))
-                cycles_length = [len(tmp) for tmp in cycles]
-            else:
-                cycles = [cycle for cycle in nx.simple_cycles(nxg,length_bound=ll[1]) if len(cycle)>=ll[0]]
-                cycles_length = [len(tmp) for tmp in cycles]
-            
-            cycle_count = [len(cycles_length)]
-            new_loops = pd.DataFrame(data={"timestep":ts,"count":cycle_count,"lengths":[cycles_length],"loops":[cycles]})
-            log.debug(f"frame {idx} timestep {ts} found loops: {new_loops}")
-            loops = pd.concat([loops, new_loops], ignore_index=True)
-        log.debug(f"loops found: {loops}")
-        return loops
-# End of class
