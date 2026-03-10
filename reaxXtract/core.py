@@ -30,6 +30,12 @@ configure_log(level="DEBUG", force=True)
 #import pdb
 #pdb.set_trace()
 
+__all__ = ['DEFAULT_COLOR', 'ELEM2HEX', 'ON2ELEM', 'ON2HEX', 
+           'ReaxXtract',
+           'renumber_and_count_rxns', 'filter_transient_reactions', 'remove_atoms_by_type', 'remove_atoms_by_pattern', 
+           'plot_rxns', 'get_degrees', 'find_minimum_cycle_basis']
+
+
 class ReaxXtract:
     ##############
     # initialize #
@@ -178,7 +184,6 @@ class ReaxXtract:
         if not self.frames["timestep"].is_monotonic_increasing:
             log.warning(f"READER: Timesteps are not monotonic increasing!!!")
 
-
     # find reactions #
     def find_reactions(self):
         """
@@ -288,7 +293,6 @@ class ReaxXtract:
         # renumber reactions and count unique reactions
         self.rxns = renumber_and_count_rxns(self.rxns)
 
-
     # find reacting atoms for two frames #
     def _find_reacting_atoms_for_two_frames(self,Gbefore:nx.Graph,Gafter:nx.Graph):
         # compare graphs, edges that are not in both graphs => reaction
@@ -366,7 +370,6 @@ class ReaxXtract:
             reacting_atoms_sets = []
 
         return reacting_edges_before_sets, reacting_edges_after_sets, reacting_atoms_sets
-
 
     # convert reaction sets to pandas DataFrame format for further analysis and plotting #
     def _rsets_to_pd(self,before:int,after:int,reaction_sets,edges_sets_before,edges_sets_after):
@@ -598,6 +601,11 @@ def plot_rxns(df:pd.core.frame.DataFrame, basename:str="reaxXtract", outformat:s
     outfolder = basename or "reaxXtract_outdir"
     if not os.path.exists(outfolder):
         os.makedirs(outfolder, exist_ok=True)
+    
+    digitsIDX = np.max([4, len(str(len(df)))])
+    digitsTS =  len(str(df["timestep"].max()))
+    digitsID =  len(str(df["rxnID"].max()))
+    digitsCount =  len(str(df["rxnCount"].max()))
 
     for idx, rxn in df.iterrows():
         frame = rxn["frame"]
@@ -625,7 +633,7 @@ def plot_rxns(df:pd.core.frame.DataFrame, basename:str="reaxXtract", outformat:s
         # before reaction
         # prepare data
         plt.figure(figsize=(14,6))
-        plt.suptitle(f"Timestep: {timestep} RxnType: {rxnID}\n {hash_before}:{hash_after}")
+        plt.suptitle(f"Index: {idx} Timestep: {timestep} Type: {rxnID}\n {hash_before}:{hash_after}")
         plt.subplot(1, 2, 1)
         plt.title("Before")
         node2elem = nx.get_node_attributes(Gbefore, name="element")
@@ -666,17 +674,19 @@ def plot_rxns(df:pd.core.frame.DataFrame, basename:str="reaxXtract", outformat:s
                 node_size=300, edge_color="black", width=bo)
         plt.tight_layout()
         
+        filename = f"Reaction{idx:0{digitsIDX}d}_timestep{timestep:0{digitsTS}d}_Type{rxnID:0{digitsID}d}_Count{rxnCount:0{digitsCount}d}"
+
         if outformat == "png":
-            fileout = f"{basename}_timestep{timestep}_rxnType{rxnID}_rxnCount{rxnCount}.png"
+            fileout = filename+".png"
             f_out = os.path.join(outfolder, fileout)
             plt.savefig(f_out,dpi=200)
         elif outformat == "pdf":
-            fileout = f"{basename}_timestep{timestep}_rxnType{rxnID}_rxnCount{rxnCount}.pdf"
+            fileout = filename+".pdf"
             f_out = os.path.join(outfolder, fileout)
             plt.savefig(f_out,format="pdf")
         else:
             log.warning(f"Unsupported output format {outformat}, defaulting to PDF")
-            fileout = f"{basename}_timestep{timestep}_rxnType{rxnID}_rxnCount{rxnCount}.pdf"
+            fileout = filename+".pdf"
             f_out = os.path.join(outfolder, fileout)
             plt.savefig(f_out,format="pdf")
 
