@@ -118,9 +118,7 @@ class ReaxXtract:
         self.type2on:dict = convert_str2dict(self.atom_type_map)
         self.elem2hex:dict = {self.on2elem[i]:self.on2hex[i] for i in self.on2elem.keys()}
 
-    ##############
     # read bonds #
-    ##############
     def read(self, infile: Union[str, List[str]] = None, informat: str = None):
         """
         Read bond file and populate instance state:
@@ -181,10 +179,8 @@ class ReaxXtract:
             log.warning(f"READER: Timesteps are not monotonic increasing!!!")
 
 
-    ##################
     # find reactions #
-    ##################
-    def find_rxns(self):
+    def find_reactions(self):
         """
         read_rxns(self,
                   infile: Optional[str] = None,
@@ -196,7 +192,7 @@ class ReaxXtract:
 
         Summary
         - Calls `self.read(infile, informat)` (unless already read and force is False)
-          and then `self.find_rxns()`.
+          and then `self.find_reactions()`.
         - After execution the instance contains:
             - self.frames (DataFrame, one row per frame)
             - self.rxns (DataFrame, one row per detected reaction occurrence)
@@ -266,11 +262,11 @@ class ReaxXtract:
 
             log.info(f"evaluating frame: {idx} ({self.frames['frame'].iloc[idx]}) timestep: {self.frames['timestep'].iloc[idx]}")
             # find reacting atoms
-            [edges_sets_before,edges_sets_after, reaction_sets] = self.find_reacting_atoms_for_two_frames(Gbefore, Gafter)   # list(set(int,),set(int,))
+            [edges_sets_before,edges_sets_after, reaction_sets] = self._find_reacting_atoms_for_two_frames(Gbefore, Gafter)   # list(set(int,),set(int,))
             log.debug(f"reaction_sets: {reaction_sets} with edges_before: {edges_sets_before} and edges_after: {edges_sets_after}")
                 
             if len(reaction_sets) > 0:
-                df_frame = self.rsets_to_pd(before_idx, after_idx,
+                df_frame = self._rsets_to_pd(before_idx, after_idx,
                                             reaction_sets, edges_sets_before, edges_sets_after)
                 if df_frame is not None and not df_frame.empty:
                     df_file = pd.concat([df_file, df_frame], ignore_index=True)
@@ -290,12 +286,11 @@ class ReaxXtract:
 
         #self.df1 = df_file.copy()
         # renumber reactions and count unique reactions
-        self.renumber_and_count_rxns()
-
+        renumber_and_count_rxns()
 
 
     # find reacting atoms for two frames #
-    def find_reacting_atoms_for_two_frames(self,Gbefore:nx.Graph,Gafter:nx.Graph):
+    def _find_reacting_atoms_for_two_frames(self,Gbefore:nx.Graph,Gafter:nx.Graph):
         # compare graphs, edges that are not in both graphs => reaction
         #reacting_edges = nx.symmetric_difference(Gbefore,Gafter).edges()
         all_edges_before = nx.difference(Gbefore,Gafter).edges()
@@ -371,7 +366,7 @@ class ReaxXtract:
 
 
     # convert reaction sets to pandas DataFrame format for further analysis and plotting #
-    def rsets_to_pd(self,before:int,after:int,reaction_sets,edges_sets_before,edges_sets_after):
+    def _rsets_to_pd(self,before:int,after:int,reaction_sets,edges_sets_before,edges_sets_after):
         """
         Convert reaction sets and their associated edge changes into 
         a pandas DataFrame format for further analysis and plotting.
@@ -408,7 +403,7 @@ class ReaxXtract:
                              "Gbefore":Gbefore,"Gafter":Gafter,
                              "rxn_hash_before":hash_before,"rxn_hash_after":hash_after})
         return pd.DataFrame(tmp_list)
-    # End of class
+# End of class
 
 ## work on reactions and topology ##
 # renumber reactions and count unique reactions #
@@ -453,7 +448,7 @@ def renumber_and_count_rxns(self, df:pd.core.frame.DataFrame=None) -> pd.core.fr
 
 
 # remove reactions that reverse in stabilize frames #
-def filter_transient_reactions(self,nframes:int=None,df:pd.core.frame.DataFrame=None) -> pd.core.frame.DataFrame:
+def filter_transient_reactions(self, nframes:int=None, df:pd.core.frame.DataFrame=None)-> list[pd.core.frame.DataFrame,pd.core.frame.DataFrame]:
     """
     Remove reactions that reverse within a certain number of frames (stabiframe) after their 
     occurrence. Based on 'frame', 'rxn_hash_before' and 'rxn_hash_after' in pandas DataFrame.
@@ -490,22 +485,20 @@ def filter_transient_reactions(self,nframes:int=None,df:pd.core.frame.DataFrame=
     if len(rmv_idx) > 0:
         log.info(f"{len(rmv_idx)} Reaction(s) found that reverse within {self.stabiframe} frames, removing reactions")
         df_rmv = df_work.drop(rmv_idx, inplace=True)
-        df_work = self.renumber_and_count_rxns(df_work)
-        df_rmv  = self.renumber_and_count_rxns(df_rmv)
-        self.renumber_and_count_rxns()
+        df_work = renumber_and_count_rxns(df_work)
+        df_rmv  = renumber_and_count_rxns(df_rmv)
+        renumber_and_count_rxns()
     else:
-        df_work = self.renumber_and_count_rxns(df_work)
+        df_work = renumber_and_count_rxns(df_work)
         df_rmv = None
 
     return df_work, df_rmv
 
 
 # remove_atoms #
-def remove_atoms_by_type(self, df:pd.core.frame.DataFrame=None, target_atoms:tuple[int|str,...]=None) -> pd.core.frame.DataFrame:
-    # use self.frames or provided DataFrame if provided as argument
-    df_in = df if df is not None else self.frames
+def remove_atoms_by_type(df:pd.core.frame.DataFrame=None, target_atoms:tuple[int|str,...]=None) -> pd.core.frame.DataFrame:
     # copy DataFrame to avoid surprising in-place side effects for caller
-    df_work = df_in.copy(deep=True)
+    df_work = df.copy(deep=True)
             
     for idx, row in df_work.iterrows():
         # real copy to avoid modifying the original graph in self.frames
@@ -529,7 +522,7 @@ def remove_atoms_by_type(self, df:pd.core.frame.DataFrame=None, target_atoms:tup
 
 
 # remove atoms by somorph search of subgraph #
-def remove_atoms_by_pattern(self, template_node_ids:list|set, delete_node_ids:list|set, df:pd.core.frame.DataFrame=None, node_attr:str='type', pattern_from_frame:int=0) -> pd.core.frame.DataFrame:
+def remove_atoms_by_pattern(template_node_ids:list|set, delete_node_ids:list|set, df:pd.core.frame.DataFrame=None, node_attr:str='type', pattern_from_frame:int=0) -> pd.core.frame.DataFrame:
     """
     Simplifies the graph by matching a template pattern and removing specific 
     nodes. Handles molecular symmetry by filtering unique node sets.
@@ -544,7 +537,7 @@ def remove_atoms_by_pattern(self, template_node_ids:list|set, delete_node_ids:li
         log.error(f"Nodes {invalid_ids} are not in template_node_ids!")
         raise ValueError("Invalid delete_node_ids provided.")
     
-    df_work = df.copy(deep=True) if df is not None else self.frames.copy(deep=True)
+    df_work = df.copy(deep=True)
 
     # 2. Create the template graph
     template = df_work["graph"].iloc[pattern_from_frame].subgraph(template_node_ids).copy()
@@ -689,79 +682,76 @@ def plot_rxns(self, df:pd.core.frame.DataFrame=None, basename:str=None) -> None:
 
 ## analyze topology ##
 # get degrees #
-def get_degrees(self, df:pd.core.frame.DataFrame=None, target_atoms:tuple[int|str,...]=None ) -> list[list[int]]:
-        # use on self.rxns or another Pandas DataFrame if provided as argument
-        df_in = df if df is not None else self.frames
-        df_work = df_in.copy()
+def get_degrees(df:pd.core.frame.DataFrame=None, target_atoms:tuple[int|str,...]=None ) -> list[list[int]]:
+    df_work = df.copy()
+    degrees = [None]*len(df_work)
+    for idx, (df_idx, frame) in enumerate(df_work.iterrows()):
+        nxg = frame["graph"]
 
-        degrees = [None]*len(df_work)
-        for idx, (df_idx, frame) in enumerate(df_work.iterrows()):
-            nxg = frame["graph"]
+        if target_atoms is None:
+            nodes = list(nxg.nodes())
+        else:
+            nodes = list(node for node, node_data in nxg.nodes(data=True)
+                            if node_data.get('type') in target_atoms 
+                            or node_data.get('element') in target_atoms)
 
-            if target_atoms is None:
-                nodes = list(nxg.nodes())
-            else:
-                nodes = list(node for node, node_data in nxg.nodes(data=True)
-                                if node_data.get('type') in target_atoms 
-                                or node_data.get('element') in target_atoms)
-
-            degrees[idx] = list(d for n, d in nxg.degree(nodes))
-        return degrees
+        degrees[idx] = list(d for n, d in nxg.degree(nodes))
+    return degrees
 
     
-def find_minimum_cycle_basis(self, df: pd.DataFrame = None, min_size: int = 7, max_block_size: int = None) -> list[list[int]]:
-        """
-        Computes the Minimum Cycle Basis (MCB) for each frame in the trajectory.
-        This method identifies the Smallest Set of Smallest Rings (SSSR) by 
-        decomposing the graph into biconnected components. 
+def find_minimum_cycle_basis(df: pd.DataFrame = None, min_size: int = 7, max_block_size: int = None) -> list[list[int]]:
+    """
+    Computes the Minimum Cycle Basis (MCB) for each frame in the trajectory.
+    This method identifies the Smallest Set of Smallest Rings (SSSR) by 
+    decomposing the graph into biconnected components. 
 
-        Args:
-            df (pd.DataFrame, optional): Input DataFrame containing 'graph' column. 
-                Defaults to self.backbone or self.frames.
-            min_size (int): Minimum number of nodes for a cycle to be included.
-            max_block_size (int, optional): Safety threshold. Blocks with more nodes 
-                than this will be skipped to avoid O(n^3) complexity stalls.
+    Args:
+        df (pd.DataFrame, optional): Input DataFrame containing 'graph' column. 
+            Defaults to self.backbone or self.frames.
+        min_size (int): Minimum number of nodes for a cycle to be included.
+        max_block_size (int, optional): Safety threshold. Blocks with more nodes 
+            than this will be skipped to avoid O(n^3) complexity stalls.
 
-        Returns:
-            list: A nested list [frames][cycles][node_ids].
+    Returns:
+        list: A nested list [frames][cycles][node_ids].
 
-        Complexity Note:
-        The MCB algorithm is O(m^3 * n). For dense networks that 'gel' into a 
-        single large block, max_block_size is highly recommended to avoid 
-        computational stalls.
-        """
-        # Select data source
-        df_in = df if df is not None else getattr(self, 'backbone', self.frames)
-        all_frame_cycles = [None] * len(df_in)
+    Complexity Note:
+    The MCB algorithm is O(m^3 * n). For dense networks that 'gel' into a 
+    single large block, max_block_size is highly recommended to avoid 
+    computational stalls.
+    """
+    # Select data source
+    df_in = df
+    all_frame_cycles = [None] * len(df_in)
 
-        for idx, (df_idx, frame) in enumerate(df_in.iterrows()):
-            nxg = frame["graph"]
-            frame_basis = []
+    for idx, (df_idx, frame) in enumerate(df_in.iterrows()):
+        nxg = frame["graph"]
+        frame_basis = []
 
-            # Use biconnected components to isolate cyclic parts of the network
-            for block_nodes in nx.biconnected_components(nxg):
-                block_len = len(block_nodes)
-            
-                if block_len < min_size:
-                    continue
-            
-                # Check safety limit for computational cost
-                if max_block_size and block_len > max_block_size:
-                    log.warning(
-                        f"Skipping large block ({block_len} nodes) in frame {idx}. "
-                        f"Increase max_block_size if this analysis is required."
-                    )
-                    continue
-                
-                subgraph = nxg.subgraph(block_nodes)
-            
-                # MCB calculation (the heavy lifting)
-                block_basis = nx.minimum_cycle_basis(subgraph)
-            
-                # Filter and store results
-                frame_basis.extend([c for c in block_basis if len(c) >= min_size])
+        # Use biconnected components to isolate cyclic parts of the network
+        for block_nodes in nx.biconnected_components(nxg):
+            block_len = len(block_nodes)
         
-            all_frame_cycles[idx] = frame_basis
+            if block_len < min_size:
+                continue
         
-        return all_frame_cycles
+            # Check safety limit for computational cost
+            if max_block_size and block_len > max_block_size:
+                log.warning(
+                    f"Skipping large block ({block_len} nodes) in frame {idx}. "
+                    f"Increase max_block_size if this analysis is required."
+                )
+                continue
+            
+            subgraph = nxg.subgraph(block_nodes)
+        
+            # MCB calculation (the heavy lifting)
+            block_basis = nx.minimum_cycle_basis(subgraph)
+        
+            # Filter and store results
+            frame_basis.extend([c for c in block_basis if len(c) >= min_size])
+    
+        all_frame_cycles[idx] = frame_basis
+    
+    return all_frame_cycles
 
