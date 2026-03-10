@@ -303,12 +303,12 @@ class ReaxXtract:
         all_reacting_edges = set(all_edges_before).union(set(all_edges_after))
         log.debug(f"all_reacting_edges: {all_reacting_edges}")
         # atom IDs that are involved with changed bond connectivity
-        all_reacting_atoms = set(i for j in set(all_reacting_edges) for i in j)       # set(int,)
-        log.debug(f"all_reacting_atoms: {all_reacting_atoms}")
+        reacting_atoms_core = set(i for j in set(all_reacting_edges) for i in j)       # set(int,)
+        log.debug(f"reacting_atoms_core: {reacting_atoms_core}")
 
         # subgraph with reacting atoms and edges (before and after) 
         # to find connected components as individual reactions
-        Gcombine = Gbefore.subgraph(all_reacting_atoms).copy()              # nx.Graph
+        Gcombine = Gbefore.subgraph(reacting_atoms_core).copy()              # nx.Graph
         Gcombine.add_edges_from(all_reacting_edges)                         # nx.Graph, add reacting edges 
         reacting_atoms_sets = list(nx.connected_components(Gcombine))       # list(set(int,),)
         
