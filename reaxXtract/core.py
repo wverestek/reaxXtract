@@ -340,7 +340,7 @@ class ReaxXtract:
                         for j in range(i+1, nsets):
                             if len(iset.intersection(tmpsets[j])) > 0:
                                 reacting_atoms_sets.append(iset.union(tmpsets[j]))
-                                tmpsets[j]          = set() # mark for deletion
+                                tmpsets[j] = set()    # reomve from further consideration
                     log.debug(f"reacting_atoms_sets after merging: {reacting_atoms_sets}")
 
                 else:
