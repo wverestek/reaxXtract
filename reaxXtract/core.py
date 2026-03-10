@@ -1,5 +1,5 @@
 #from fileinput import filename
-from math import e
+#from math import e
 import os, os.path
 
 from networkx.algorithms.operators import union
@@ -286,7 +286,7 @@ class ReaxXtract:
 
         #self.df1 = df_file.copy()
         # renumber reactions and count unique reactions
-        renumber_and_count_rxns()
+        self.rxns = renumber_and_count_rxns(self.rxns)
 
 
     # find reacting atoms for two frames #
@@ -296,18 +296,18 @@ class ReaxXtract:
         all_edges_before = nx.difference(Gbefore,Gafter).edges()
         all_edges_after  = nx.difference(Gafter,Gbefore).edges()
         all_reacting_edges = set(all_edges_before).union(set(all_edges_after))
-        log.debug(f"all_reacting_edges: {all_reacting_edges}")
+        log.debug(f"identified edges: {all_reacting_edges}")
         # atom IDs that are involved with changed bond connectivity
-        reacting_atoms_core = set(i for j in set(all_reacting_edges) for i in j)       # set(int,)
-        log.debug(f"reacting_atoms_core: {reacting_atoms_core}")
+        all_reacting_atoms = set(i for j in set(all_reacting_edges) for i in j)       # set(int,)
+        log.debug(f"identified atoms: {all_reacting_atoms}")
 
         # subgraph with reacting atoms and edges (before and after) 
         # to find connected components as individual reactions
-        Gcombine = Gbefore.subgraph(reacting_atoms_core).copy()              # nx.Graph
+        Gcombine = Gbefore.subgraph(all_reacting_atoms).copy()              # nx.Graph
         Gcombine.add_edges_from(all_reacting_edges)                         # nx.Graph, add reacting edges 
-        reacting_atoms_sets = list(nx.connected_components(Gcombine))       # list(set(int,),)
+        reacting_atoms_core_sets = list(nx.connected_components(Gcombine))       # list(set(int,),)
         
-        nsets = len(reacting_atoms_sets)
+        nsets = len(reacting_atoms_core_sets)
         # reactions found
         if nsets > 0:
             
@@ -315,12 +315,11 @@ class ReaxXtract:
             if self.rxn_bond_cutoff > 0:
                 
                 # expand individual sets by rxn_bond_cutoff bonds
-                log.debug(f"reacting_atoms_sets before expansion: {reacting_atoms_sets}")
+                log.debug(f"reacting_atoms_sets before expansion: {reacting_atoms_core_sets}")
                 tmpsets = []
-                for i,iset in enumerate(reacting_atoms_sets):
+                for i,iset in enumerate(reacting_atoms_core_sets):
                     reacting_atoms1 = k_nearest_neighs(Gbefore,iset,self.rxn_bond_cutoff)
                     reacting_atoms2 = k_nearest_neighs(Gafter ,iset,self.rxn_bond_cutoff)  
-                    #tmpsets[i] = reacting_atoms1.union(reacting_atoms2)     # combine sets
                     tmpsets.append(reacting_atoms1.union(reacting_atoms2))    # combine sets
                 log.debug(f"reacting_atoms_sets after expansion: {tmpsets}")
 
@@ -330,12 +329,15 @@ class ReaxXtract:
                     log.debug(f"Merging:")
                     reacting_atoms_sets = []
                     # merge sets that have common atoms after expansion
-                    log.debug(f"reacting_atoms_sets before merging: {reacting_atoms_sets}")
+                    log.debug(f"reacting_atoms_sets before merging: {reacting_atoms_core_sets}")
                     for i,iset in enumerate(tmpsets):
                         for j in range(i+1, nsets):
-                            if len(iset.intersection(tmpsets[j])) > 0:
+                            inter_atoms = iset.intersection(reacting_atoms_core_sets[j])
+                            if len(inter_atoms) > 0:
+                                print(f"Merging sets {iset} and {tmpsets[j]} with common atoms {inter_atoms}")
                                 reacting_atoms_sets.append(iset.union(tmpsets[j]))
-                                tmpsets[j] = set()    # reomve from further consideration
+                                #reacting_atoms_core_sets[j] = set()                     # remove from further consideration
+                                #tmpsets[j] = set()                                      # remove from further consideration
                     log.debug(f"reacting_atoms_sets after merging: {reacting_atoms_sets}")
 
                 else:
@@ -344,7 +346,8 @@ class ReaxXtract:
                     
             # no expansion, just use original sets of reacting atoms and edges
             else:
-                pass
+                reacting_atoms_sets = reacting_atoms_core_sets
+
             log.debug(f"reacting_atoms_sets: {reacting_atoms_sets}")
 
             # construct edge sets for each reaction set
@@ -407,17 +410,15 @@ class ReaxXtract:
 
 ## work on reactions and topology ##
 # renumber reactions and count unique reactions #
-def renumber_and_count_rxns(self, df:pd.core.frame.DataFrame=None) -> pd.core.frame.DataFrame:
+def renumber_and_count_rxns(df:pd.core.frame.DataFrame=None) -> pd.core.frame.DataFrame:
     """
     Renumber reactions and count unique reactions based on their hashes in pandas DataFrame. 
     This method updates two columns of the DataFrame: 'rxnID' and 'rxnCount'.
     If df is None, operates on self.rxns and updates it in place. Otherwise, operates on the 
     provided DataFrame and returns a new DataFrame with the updated columns.
     """
-    # choose target DataFrame
-    df_in = self.rxns if df is None else df
     # operate on a copy to avoid surprising in-place side effects for caller
-    df_work = df_in.copy()
+    df_work = df.copy(deep=True)
 
     if df_work is None or df_work.empty:
         log.info("No reactions to renumber and count.")
@@ -448,7 +449,7 @@ def renumber_and_count_rxns(self, df:pd.core.frame.DataFrame=None) -> pd.core.fr
 
 
 # remove reactions that reverse in stabilize frames #
-def filter_transient_reactions(self, nframes:int=None, df:pd.core.frame.DataFrame=None)-> list[pd.core.frame.DataFrame,pd.core.frame.DataFrame]:
+def filter_transient_reactions(df:pd.core.frame.DataFrame=None, nframes:int=None)-> list[pd.core.frame.DataFrame,pd.core.frame.DataFrame]:
     """
     Remove reactions that reverse within a certain number of frames (stabiframe) after their 
     occurrence. Based on 'frame', 'rxn_hash_before' and 'rxn_hash_after' in pandas DataFrame.
@@ -456,19 +457,15 @@ def filter_transient_reactions(self, nframes:int=None, df:pd.core.frame.DataFram
     - filtered_reactions: DataFrame with reactions that do not reverse within stabiframe frames.
     - removed_reactions: DataFrame with reactions that reverse within stabiframe frames.
     """
-    # choose target DataFrame
-    df_in = self.rxns if df is None else df
     # operate on a copy to avoid surprising in-place side effects for caller
-    df_work = df_in.copy()
-
-    self.stabiframe = nframes or self.stabiframe
-
+    df_work = df.copy()
+        
     rmv_idx = []
     for idx,row in df_work.iterrows():
         hash_before = row["rxn_hash_before"]
         hash_after = row["rxn_hash_after"]
         current_frame = row["frame"]
-        max_frame = current_frame + self.stabiframe
+        max_frame = current_frame + nframes
         
         mask_frame = df_work["frame"].gt(current_frame) & df_work["frame"].le(max_frame)
         mask_hash = (df_work["rxn_hash_before"] == hash_after) & (df_work["rxn_hash_after"] == hash_before)
@@ -483,13 +480,12 @@ def filter_transient_reactions(self, nframes:int=None, df:pd.core.frame.DataFram
             rmv_idx.append(rev_idx)
     
     if len(rmv_idx) > 0:
-        log.info(f"{len(rmv_idx)} Reaction(s) found that reverse within {self.stabiframe} frames, removing reactions")
+        log.info(f"{len(rmv_idx)} Reaction(s) found that reverse within {nframes} frames, removing reactions")
         df_rmv = df_work.drop(rmv_idx, inplace=True)
-        df_work = renumber_and_count_rxns(df_work)
-        df_rmv  = renumber_and_count_rxns(df_rmv)
-        renumber_and_count_rxns()
+        #df_work = renumber_and_count_rxns(df_work)
+        #df_rmv  = renumber_and_count_rxns(df_rmv)
     else:
-        df_work = renumber_and_count_rxns(df_work)
+        #df_work = renumber_and_count_rxns(df_work)
         df_rmv = None
 
     return df_work, df_rmv
@@ -522,7 +518,7 @@ def remove_atoms_by_type(df:pd.core.frame.DataFrame=None, target_atoms:tuple[int
 
 
 # remove atoms by somorph search of subgraph #
-def remove_atoms_by_pattern(template_node_ids:list|set, delete_node_ids:list|set, df:pd.core.frame.DataFrame=None, node_attr:str='type', pattern_from_frame:int=0) -> pd.core.frame.DataFrame:
+def remove_atoms_by_pattern(df:pd.core.frame.DataFrame, template_node_ids:list|set, delete_node_ids:list|set, node_attr:str='type', pattern_from_frame:int=0) -> pd.core.frame.DataFrame:
     """
     Simplifies the graph by matching a template pattern and removing specific 
     nodes. Handles molecular symmetry by filtering unique node sets.
@@ -593,92 +589,87 @@ def remove_atoms_by_pattern(template_node_ids:list|set, delete_node_ids:list|set
 
 
 # plot reactions #
-def plot_rxns(self, df:pd.core.frame.DataFrame=None, basename:str=None) -> None:
-        # choose target DataFrame (do not use `df or self.rxns` because pandas.DataFrame is not boolean)
-        df_in = self.rxns if df is None else df
-        # operate on a copy to avoid surprising in-place side effects for caller
-        df_work = df_in.copy()
+def plot_rxns(df:pd.core.frame.DataFrame, basename:str="reaxXtract") -> None:
+    # check if DataFrame is empty
+    if df.empty:
+        log.warn("No reactions found to plot.")
+        return
 
-        if df_work.empty:
-            log.warn("No reactions found to plot.")
-            return
+    outfolder = basename or "reaxXtract_outdir"
+    if not os.path.exists(outfolder):
+        os.makedirs(outfolder, exist_ok=True)
 
-        cf = self.checkframe
-        outfolder = basename or self.basename+"_dir"
-        if not os.path.exists(outfolder):
-            os.makedirs(outfolder, exist_ok=True)
+    for idx, rxn in df.iterrows():
+        frame = rxn["frame"]
+        timestep = rxn["timestep"]
+        rxnID = rxn["rxnID"]
+        rxnCount = rxn["rxnCount"]
+        hash_before = rxn["rxn_hash_before"]
+        hash_after = rxn["rxn_hash_after"]
 
-        for idx, rxn in df.iterrows():
-            frame = rxn["frame"]
-            timestep = rxn["timestep"]
-            rxnID = rxn["rxnID"]
-            rxnCount = rxn["rxnCount"]
-            hash_before = rxn["rxn_hash_before"]
-            hash_after = rxn["rxn_hash_after"]
+        Gbefore = rxn["Gbefore"]
+        Gafter = rxn["Gafter"]
+        #active_edges_before = nx.difference(Gbefore, Gafter).edges()
+        #active_edges_after  = nx.difference(Gafter, Gbefore).edges()
+        active_edges = nx.symmetric_difference(Gbefore, Gafter).edges()
 
-            Gbefore = rxn["Gbefore"]
-            Gafter = rxn["Gafter"]
-            #active_edges_before = nx.difference(Gbefore, Gafter).edges()
-            #active_edges_after  = nx.difference(Gafter, Gbefore).edges()
-            active_edges = nx.symmetric_difference(Gbefore, Gafter).edges()
+        # initial positions
+        Gprint = Gbefore.copy()
+        Gprint.add_edges_from(active_edges)
+        pos = nx.kamada_kawai_layout(Gprint)
+        pos = nx.spring_layout(Gprint, iterations=200, pos=pos)
+        del Gprint
 
-            # initial positions
-            Gprint = Gbefore.copy()
-            Gprint.add_edges_from(active_edges)
-            pos = nx.kamada_kawai_layout(Gprint)
-            pos = nx.spring_layout(Gprint, iterations=200, pos=pos)
-            del Gprint
-
-            
-            plt.clf()
-            # before reaction
-            # prepare data
-            plt.figure(figsize=(14,6))
-            plt.suptitle(f"Timestep: {timestep} RxnType: {rxnID}\n {hash_before}:{hash_after}")
-            plt.subplot(1, 2, 1)
-            plt.title("Before")
-            node2elem = nx.get_node_attributes(Gbefore, name="element")
-            node2type = nx.get_node_attributes(Gbefore, name="type")
-            color = [self.elem2hex.get(v, self.default_color) for v in
-                      nx.get_node_attributes(Gbefore, name="element").values()]
-            node_labels = {k:  str(node2elem[k]) + ":" + str(node2type[k]) + "\n" + str(k) for k in Gbefore}
-            if len(nx.get_edge_attributes(Gbefore,"bo")) > 0:
-                bo = [tmp for tmp in list(nx.get_edge_attributes(Gbefore, "bo").values())]
-            else:
-                bo = [1.0 for i in Gbefore.edges()]
-            pos_before = nx.spring_layout(Gbefore, iterations=75, pos=pos)
-            # plot data
-            #nx.draw_networkx_edges(Gbefore, edgelist=active_edges_before, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos)
-            nx.draw_networkx_edges(Gbefore, edgelist=active_edges, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos_before)
-            nx.draw(Gbefore, pos=pos_before, node_color=color, 
-                    with_labels=True, labels=node_labels, font_size=6,
-                    node_size=300, edge_color="black", width=bo)
-            plt.tight_layout()
-            
-            # after reaction
-            # prepare data
-            plt.subplot(1, 2, 2)
-            plt.title("After")
-            color = [self.elem2hex.get(v, self.default_color) for v in
-                     nx.get_node_attributes(Gafter, name="element").values()]
-            node_labels = {k:  str(node2elem[k]) + ":" + str(node2type[k]) + "\n" + str(k) for k in Gafter}
-            if len(nx.get_edge_attributes(Gafter,"bo")) > 0:
-                bo = [tmp for tmp in list(nx.get_edge_attributes(Gbefore, "bo").values())]
-            else:
-                bo = [1.0 for i in Gbefore.edges()]
-            pos_after = nx.spring_layout(Gafter, iterations=75, pos=pos)
-            # plot data
-            #nx.draw_networkx_edges(Gafter, edgelist=active_edges_after, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos)
-            nx.draw_networkx_edges(Gafter, edgelist=active_edges, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos_after)
-            nx.draw(Gafter, pos=pos_after, node_color=color, 
-                    with_labels=True, labels=node_labels, font_size=6,
-                    node_size=300, edge_color="black", width=bo)
-            plt.tight_layout()
-            fig = plt.gcf()
-            fileout = f"{self.basename}_timestep{timestep}_rxnType{rxnID}_rxnCount{rxnCount}.png"
-            f_out = os.path.join(outfolder, fileout)
-            plt.savefig(f_out,dpi=200)
-            plt.close(fig)
+        
+        plt.clf()
+        # before reaction
+        # prepare data
+        plt.figure(figsize=(14,6))
+        plt.suptitle(f"Timestep: {timestep} RxnType: {rxnID}\n {hash_before}:{hash_after}")
+        plt.subplot(1, 2, 1)
+        plt.title("Before")
+        node2elem = nx.get_node_attributes(Gbefore, name="element")
+        node2type = nx.get_node_attributes(Gbefore, name="type")
+        color = [ELEM2HEX.get(v, DEFAULT_COLOR) for v in
+                  nx.get_node_attributes(Gbefore, name="element").values()]
+        node_labels = {k:  str(node2elem[k]) + ":" + str(node2type[k]) + "\n" + str(k) for k in Gbefore}
+        if len(nx.get_edge_attributes(Gbefore,"bo")) > 0:
+            bo = [tmp for tmp in list(nx.get_edge_attributes(Gbefore, "bo").values())]
+        else:
+            bo = [1.0 for i in Gbefore.edges()]
+        pos_before = nx.spring_layout(Gbefore, iterations=75, pos=pos)
+        # plot data
+        #nx.draw_networkx_edges(Gbefore, edgelist=active_edges_before, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos)
+        nx.draw_networkx_edges(Gbefore, edgelist=active_edges, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos_before)
+        nx.draw(Gbefore, pos=pos_before, node_color=color, 
+                with_labels=True, labels=node_labels, font_size=6,
+                node_size=300, edge_color="black", width=bo)
+        plt.tight_layout()
+        
+        # after reaction
+        # prepare data
+        plt.subplot(1, 2, 2)
+        plt.title("After")
+        color = [ELEM2HEX.get(v, DEFAULT_COLOR) for v in
+                 nx.get_node_attributes(Gafter, name="element").values()]
+        node_labels = {k:  str(node2elem[k]) + ":" + str(node2type[k]) + "\n" + str(k) for k in Gafter}
+        if len(nx.get_edge_attributes(Gafter,"bo")) > 0:
+            bo = [tmp for tmp in list(nx.get_edge_attributes(Gbefore, "bo").values())]
+        else:
+            bo = [1.0 for i in Gbefore.edges()]
+        pos_after = nx.spring_layout(Gafter, iterations=75, pos=pos)
+        # plot data
+        #nx.draw_networkx_edges(Gafter, edgelist=active_edges_after, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos)
+        nx.draw_networkx_edges(Gafter, edgelist=active_edges, alpha=0.6, width=5.0, edge_color="tab:red", pos=pos_after)
+        nx.draw(Gafter, pos=pos_after, node_color=color, 
+                with_labels=True, labels=node_labels, font_size=6,
+                node_size=300, edge_color="black", width=bo)
+        plt.tight_layout()
+        fig = plt.gcf()
+        fileout = f"{basename}_timestep{timestep}_rxnType{rxnID}_rxnCount{rxnCount}.png"
+        f_out = os.path.join(outfolder, fileout)
+        plt.savefig(f_out,dpi=200)
+        plt.close(fig)
 
 ## analyze topology ##
 # get degrees #
