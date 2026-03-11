@@ -1,5 +1,4 @@
 #from fileinput import filename
-#from math import e
 import os, os.path
 
 from networkx.algorithms.operators import union
