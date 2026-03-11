@@ -35,7 +35,7 @@ Python modules:
  
 ## Installation
 
-add this folder to your PYTHONPATH.
+add the reaxXtract basefolder folder to your PYTHONPATH.
 
 ## Usage
 
