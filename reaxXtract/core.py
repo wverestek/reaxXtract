@@ -410,6 +410,8 @@ class ReaxXtract:
         return pd.DataFrame(tmp_list)
 # End of class
 
+
+
 ## work on reactions and topology ##
 # renumber reactions and count unique reactions #
 def renumber_and_count_rxns(df:pd.core.frame.DataFrame=None) -> pd.core.frame.DataFrame:
@@ -589,7 +591,6 @@ def remove_atoms_by_pattern(df:pd.core.frame.DataFrame, template_node_ids:list|s
     
     return df_work
 
-
 # plot reactions #
 def plot_rxns(df:pd.core.frame.DataFrame, basename:str="reaxXtract", outformat:str="pdf") -> None:
     # check if DataFrame is empty
@@ -691,6 +692,8 @@ def plot_rxns(df:pd.core.frame.DataFrame, basename:str="reaxXtract", outformat:s
 
         fig = plt.gcf()
         plt.close(fig)
+
+
 
 ## analyze topology ##
 # get degrees #
