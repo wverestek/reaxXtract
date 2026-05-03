@@ -31,12 +31,12 @@ configure_log(level="DEBUG", force=True)
 #pdb.set_trace()
 
 __all__ = ['DEFAULT_COLOR', 'ELEM2HEX', 'ON2ELEM', 'ON2HEX', 
-           'ReaxXtract',
+           'AtomiGraph',
            'renumber_and_count_rxns', 'filter_transient_reactions', 'remove_atoms_by_type', 'remove_atoms_by_pattern', 
            'plot_rxns', 'get_degrees', 'find_minimum_cycle_basis']
 
 
-class ReaxXtract:
+class AtomiGraph:
     ##############
     # initialize #
     ##############
@@ -75,8 +75,8 @@ class ReaxXtract:
             Hashes allow to identify if a similar reaction has already occured before or not.
         """
         
-        log.info(f"Initializing ReaxXtract class object...")
-        self.name: str = "ReaxXtract"
+        log.info(f"Initializing AtomiGraph class object...")
+        self.name: str = "AtomiGraph"
 
         # store input(s): `infiles` may be a single filename (str) or a list of filenames
         # reader.read_bonds accepts either a string, a list or glob pattern(s).
@@ -224,7 +224,7 @@ class ReaxXtract:
           very large datasets. For chunked processing rxn_ids might be inconsistent across chunks.
 
         Example
-            r = ReaxXtract(infile="bonds.reaxff.dump")
+            r = AtomiGraph(infile="bonds.reaxff.dump")
             rxns = r.read_rxns()           # reads frames and finds reactions
             rxns.to_csv("rxns_summary.csv")
         """
@@ -593,13 +593,13 @@ def remove_atoms_by_pattern(df:pd.core.frame.DataFrame, template_node_ids:list|s
     return df_work
 
 # plot reactions #
-def plot_rxns(df:pd.core.frame.DataFrame, basename:str="reaxXtract", outformat:str="pdf") -> None:
+def plot_rxns(df:pd.core.frame.DataFrame, basename:str="AtomiGraph", outformat:str="pdf") -> None:
     # check if DataFrame is empty
     if df.empty:
         log.warn("No reactions found to plot.")
         return
 
-    outfolder = basename or "reaxXtract_outdir"
+    outfolder = basename or "AtomiGraph_outdir"
     if not os.path.exists(outfolder):
         os.makedirs(outfolder, exist_ok=True)
     
