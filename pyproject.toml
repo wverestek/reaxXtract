@@ -1,7 +1,7 @@
 [project]
-name = "reaxXtract"
+name = "AtomiGraph"
 version = "0.0.1"
-description = "Analysis and visualization tool for ReaxFF bond topology files"
+description = "Atomistic Graph Analysis and Visualization tool for bond topology on top of NetworkX"
 authors = [{name="Wolfgang Verestek"}]
 license = {text="MIT"}
 requires-python = ">=3.12.3"
@@ -13,4 +13,4 @@ dependencies = [
 ]
 
 [project.scripts]
-reaxXtract = "reaxXtract.cli:main"
+AtomiGraph = "AtomiGraph.cli:main"
