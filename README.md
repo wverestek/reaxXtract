@@ -1,63 +1,122 @@
-# AtomiGraph
-AtomiGraph (from *Atomi*stic *Graph* tool) is a python tool to transfer bond topology from molecular dynamics simulations to a gaph representation (NetwrokX). This can be used for deep analysis of bonded topologies or to identify changes in the covalent bond network (reactions).
+﻿# AtomiGraph
 
-At the moment this is just some rough code I put together during my PhD thesis at IMWF University of Stuttgart and far from being professionally coded or fully capable of an automatic analysis, reaction rates etc... 
-Provided as is, without any warranty, and with the hope that it will be further developed in the future. Please use at your own risk, but feel free to use and modify it for your own purposes. Contributions welcome.
+**AtomiGraph** (from **Atomi**stic **Graph**) is a Python tool for transforming bonded topologies from molecular dynamics (MD) simulations into graph representations using NetworkX.
 
-What AtomiGraph does:
-- read lammps data or reaxff bond topology files and transfer them to NetworkX graphes
+It can be used to analyze bonded network structures in detail or to identify changes in the covalent bond network (i.e., reactions) over time.
 
-- remove nodes by atom type or pattern for cleanup before graph analysis
+This started as a side project while finishing my PhD at IMWF, University of Stuttgart — so parts of the code are still a bit rough and not fully optimized or feature-complete (e.g., automated kinetics or reaction rates).
 
-- extracting reactions by identifying changes connectivity and remove reversed reactions within a certain time window (e.g. A+B -> C and C -> A+B)
-- create a picture (before and after) for each reaction
-  
-What AtomiGraph does not (yet?):
-- take into account positions
-- take into account non-explicit bond interactions (ions, hydrogen bridges, etc.)
-- generate SMILES, SMART etc. output
+That said, it already provides a useful framework for exploring topology and reaction mechanisms in MD simulations.
+
+**Disclaimer:**  
+Provided *as is*, without any warranty. Use at your own risk — but feel free to use, modify, and build on it. Contributions are very welcome.
+
+---
+
+## What AtomiGraph does
+
+- Reads **LAMMPS data files** and **ReaxFF bond topology dumps**
+- Converts bond topology into **NetworkX graph objects**
+- Allows removal of nodes by **atom type or pattern** (useful for cleanup / coarse-graining)
+- Identifies **reaction events** by tracking connectivity changes between timesteps
+- Filters out **reversible reactions** within a given time window  
+  (e.g. A + B → C followed by C → A + B)
+- Generates **before/after visualizations** for each detected reaction
+
+---
+
+## What AtomiGraph does *not* (yet)
+
+- Does **not** consider atomic positions or geometry
+- Does **not** include non-covalent interactions (e.g. hydrogen bonds, ionic interactions)
+- Does **not** generate SMILES / SMARTS or other cheminformatics outputs
+- Does **not** write out coarse-grained MD configurations (yet)
+- No automated extraction of reaction rates (yet)
+
+---
 
 ## Citing
 
-no publication yet. For the time being, please cite Wolfgang Verestek with the github repo
+No formal publication yet.
+
+If you use AtomiGraph in academic work, please cite:
+
+> Wolfgang Verestek, AtomiGraph (GitHub repository)
+
+A methods paper is currently in preparation.
+
+---
 
 ## Prerequisites
 
-Python modules:
+Python 3 and the following modules:
+
 - sys, os, random
 - numpy
 - pandas
 - matplotlib
-- networkX
- 
+- networkx
+
+---
+
 ## Installation
 
-add the AtomiGraph basefolder folder to your PYTHONPATH.
+Add the AtomiGraph base folder to your `PYTHONPATH`, e.g.:
+
+```bash
+export PYTHONPATH=$PYTHONPATH:/path/to/AtomiGraph
+```
+
+---
 
 ## Usage
 
-```
-python3
+```python3
 import atomigraph as ag
-net = ag.AtomiGraph(infile="bonds.reaxff.dump",atom_type_map="1:C,2:H,3:H,4:O,5:O,6:O,7:O,8:O")
+
+net = ag.AtomiGraph(
+    infile="bonds.reaxff.dump",
+    atom_type_map="1:C,2:H,3:H,4:O,5:O,6:O,7:O,8:O"
+)
+
 net.read()
 net.find_rxns()
 net.plot_rxns()
 ```
+---
 
-command line usage:
-```
+## Command line usage:
+
+```Bash
 tbd
 ```
-stepwidth for frames can be adjusted at the beginning of the script:
-- startstep: index of step to start with
-- checkstep: compare to index+checkstep
-- framestep: move index framestep every time.
-- e.g. startstep 0, checkstep 1, framestep 5: compare frame 0 with 1, 5 with 6, 10 with 11 etc.
 
-Colorcoding for the plots can be spcefied for each atom type in the dictionary type2color in "utils.py".
-Predefined colors follow Jmol color coding, see https://jmol.sourceforge.net/jscolors/
+---
+## Frame/Reaction sampling
+Frame comparison can be controlled via:
+- startstep: starting frame index
+- checkstep: compare frame i up to i + checkstep
+- framestep: increment between evaluations
+
+Example:
+startstep = 0
+checkstep = 1
+framestep = 5
+
+-> compares:
+0 vs 1, 5 vs 6, 10 vs 11, ...
+
+---
+
+## Visualization
+
+Color coding can be specified for each atom type in the dictionary "type2color" in utils.py.
+
+Default colors follow Jmol conventions:
+https://jmol.sourceforge.net/jscolors/
 
 ## Contributing
 
-Contributions welcome
+Contributions, ideas, and improvements are very welcome.
+
+This started as a small playground project — feel free to help shape where it goes next.
