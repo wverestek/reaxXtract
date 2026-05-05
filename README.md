@@ -15,13 +15,14 @@ Provided *as is*, without any warranty. Use at your own risk — but feel free t
 
 ## What AtomiGraph does
 
-- Reads **LAMMPS data files** and **ReaxFF bond topology dumps**
-- Converts bond topology into **NetworkX graph objects**
-- Allows removal of nodes by **atom type or pattern** (useful for cleanup / coarse-graining)
+- Parses **LAMMPS data files** and **ReaxFF bond topology dumps**
+- Transforms bonded topology into **NetworkX graph representations**
+- Enables direct application of **NetworkX algorithms and graph-theoretical analyses**
+- Supports removal of nodes by **atom type or pattern** (e.g., for cleanup or coarse-graining)
 - Identifies **reaction events** by tracking connectivity changes between timesteps
-- Filters out **reversible reactions** within a given time window  
+- Filters out **reversible reactions** within a defined time window  
   (e.g. A + B → C followed by C → A + B)
-- Generates **before/after visualizations** for each detected reaction
+- Generates **before/after visualizations** for detected reactions
 
 ---
 
